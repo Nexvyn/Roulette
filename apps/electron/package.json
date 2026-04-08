@@ -1,0 +1,76 @@
+{
+  "name": "lyra",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cross-platform tray app for local dev server discovery.",
+  "main": "out/main/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "electron-vite build",
+    "dist": "node scripts/dist.mjs",
+    "dist:mac": "node scripts/dist.mjs --mac",
+    "dist:win": "node scripts/dist.mjs --win",
+    "dist:linux": "node scripts/dist.mjs --linux",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "build": {
+    "appId": "com.lyra.app",
+    "productName": "Lyra",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "compression": "maximum",
+    "asar": true,
+    "electronLanguages": [
+      "en-US"
+    ],
+    "directories": {
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Development",
+      "icon": "build/icon.svg"
+    },
+    "win": {
+      "signAndEditExecutable": false,
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false
+    }
+  },
+  "dependencies": {
+    "electron-store": "^10.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.4.1",
+    "electron": "^37.0.0",
+    "electron-builder": "^26.0.0",
+    "electron-vite": "^3.1.0",
+    "typescript": "^5.8.0",
+    "vite": "^6.3.5"
+  }
+}
