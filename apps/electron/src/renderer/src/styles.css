@@ -1,0 +1,30 @@
+﻿*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 13px;
+  background: transparent;
+  color: #e2e8f0;
+  overflow: hidden;
+  user-select: none;
+}
+
+#root {
+  width: 340px;
+  background: rgba(16, 18, 21, 0.92);
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.08);
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.title { font-weight: 600; font-size: 14px; }
+
+.portList { padding: 6px 0; }
