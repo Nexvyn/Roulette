@@ -1,5 +1,5 @@
-﻿import { useEffect, useState } from "react";
-import type { AppSettings, PortEntry, ScanState } from "@shared/contracts";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
+import type { AppSettings, PortEntry, ScanState, SortOption } from "@shared/contracts";
 
 const initialState: ScanState = {
   entries: [],
@@ -9,17 +9,37 @@ const initialState: ScanState = {
 };
 
 function PortRow({ entry, api }: { entry: PortEntry; api: typeof window.portMenu }) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(entry.projectName);
+
+  const save = () => {
+    setEditing(false);
+    api?.renamePort(entry.port, name);
+  };
+
   return (
     <div className="portRow">
+      <span className="portBadge">{entry.pinned ? "+" : ""}</span>
       <span className="portNumber">{entry.port}</span>
       <div className="portInfo">
-        <span className="portName">{entry.projectName}</span>
-        <span className="portMeta">{entry.processName}</span>
+        {editing ? (
+          <input
+            autoFocus
+            value={name}
+            onChange={e => setName(e.target.value)}
+            onBlur={save}
+            onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
+            className="renameInput"
+          />
+        ) : (
+          <span className="portName" onDoubleClick={() => setEditing(true)}>{entry.projectName}</span>
+        )}
+        <span className="portMeta">{entry.processName} {entry.branch ? `[${entry.branch}]` : ""}</span>
       </div>
       <div className="portActions">
-        <button onClick={() => api?.openPort(entry.port)} title="Open in browser">Open</button>
-        <button onClick={() => api?.copyUrl(entry.port)} title="Copy URL">Copy</button>
-        <button onClick={() => api?.killPort(entry.port)} className="destructive" title="Kill process">Kill</button>
+        <button onClick={() => api?.openPort(entry.port)}>Open</button>
+        <button onClick={() => api?.copyUrl(entry.port)}>Copy</button>
+        <button onClick={() => api?.killPort(entry.port)} className="destructive">Kill</button>
       </div>
     </div>
   );
@@ -28,6 +48,8 @@ function PortRow({ entry, api }: { entry: PortEntry; api: typeof window.portMenu
 export function App() {
   const [state, setState] = useState<ScanState>(initialState);
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
   const api = window.portMenu;
 
   useEffect(() => {
@@ -37,6 +59,28 @@ export function App() {
     const unsub = api.onStateChange(setState);
     return unsub;
   }, []);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "/" && document.activeElement !== searchRef.current) {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+      if (e.key === "Escape") { setQuery(""); searchRef.current?.blur(); }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
+  const filtered = useMemo(() =>
+    query
+      ? state.entries.filter(e =>
+          String(e.port).includes(query) ||
+          e.projectName.toLowerCase().includes(query.toLowerCase())
+        )
+      : state.entries,
+    [state.entries, query]
+  );
 
   return (
     <div id="panel">
@@ -49,12 +93,21 @@ export function App() {
           <button onClick={() => api?.quit()}>Quit</button>
         </div>
       </header>
+      <div className="searchBar">
+        <input
+          ref={searchRef}
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Search ports... (/)"
+          className="searchInput"
+        />
+      </div>
       <div className="portList">
-        {state.entries.map(e => (
+        {filtered.map(e => (
           <PortRow key={e.id} entry={e} api={api} />
         ))}
-        {state.entries.length === 0 && !state.isScanning && (
-          <div className="empty">No servers detected</div>
+        {filtered.length === 0 && !state.isScanning && (
+          <div className="empty">{query ? "No matches" : "No servers detected"}</div>
         )}
       </div>
     </div>
