@@ -28,3 +28,45 @@ body {
 .title { font-weight: 600; font-size: 14px; }
 
 .portList { padding: 6px 0; }
+
+.portRow {
+  display: flex;
+  align-items: center;
+  padding: 6px 12px;
+  gap: 8px;
+  border-radius: 6px;
+  margin: 2px 6px;
+  transition: background 0.1s;
+}
+
+.portRow:hover { background: rgba(255,255,255,0.05); }
+
+.portNumber {
+  font-family: monospace;
+  font-size: 12px;
+  color: #7c3aed;
+  min-width: 40px;
+}
+
+.portInfo { flex: 1; display: flex; flex-direction: column; gap: 1px; }
+.portName { font-weight: 500; }
+.portMeta { font-size: 11px; color: #94a3b8; }
+
+.portActions { display: flex; gap: 4px; opacity: 0; transition: opacity 0.1s; }
+.portRow:hover .portActions { opacity: 1; }
+
+button {
+  background: rgba(255,255,255,0.08);
+  border: none;
+  border-radius: 4px;
+  color: #e2e8f0;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 3px 7px;
+}
+
+button:hover { background: rgba(255,255,255,0.14); }
+button.destructive { color: #f87171; }
+button.destructive:hover { background: rgba(248,113,113,0.15); }
+
+.empty { padding: 24px; text-align: center; color: #64748b; font-size: 12px; }
