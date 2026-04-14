@@ -1,81 +1,261 @@
 ﻿import { EventEmitter } from "node:events";
-import type { PortEntry, ScanState } from "@shared/contracts";
+import { execFile } from "node:child_process";
+import { clipboard, shell } from "electron";
+import { promisify } from "node:util";
+import type { AppSettings, PortEntry, ScanState } from "@shared/contracts";
+import { getLaunchAtLogin, setLaunchAtLogin } from "./autoLaunch";
 import { scanPorts } from "./portScanner";
-import { getSettings } from "./settings";
+import {
+  clearCustomPortName,
+  getCustomPortNames,
+  getPinnedPorts,
+  getSettings,
+  setCustomPortName,
+  setPinnedPort,
+  updateSettings
+} from "./settings";
+
+const execFileAsync = promisify(execFile);
 
 export class PortStore extends EventEmitter {
-  private state: ScanState = { entries: [], isScanning: false, lastError: null, diagnostics: null };
-  private interval: ReturnType<typeof setInterval> | null = null;
-  private names: Record<string, string> = {};
-  private pins: Set<number> = new Set();
+  private state: ScanState = {
+    entries: [],
+    isScanning: false,
+    lastError: null,
+    diagnostics: null
+  };
 
-  getState(): ScanState { return this.state; }
+  private settings: AppSettings;
+  private timer: NodeJS.Timeout | null = null;
+  private recentlyKilled = new Map<number, number>();
 
-  start(intervalSeconds = 5) {
-    void this.scan();
-    this.interval = setInterval(() => void this.scan(), intervalSeconds * 1000);
+  constructor() {
+    super();
+    this.settings = {
+      ...getSettings(),
+      launchAtLogin: getLaunchAtLogin()
+    };
   }
 
-  stop() {
-    if (this.interval) clearInterval(this.interval);
+  getState(): ScanState {
+    return this.state;
   }
 
-  async scanNow() { await this.scan(); }
-
-  renamePort(port: number, name: string) {
-    const trimmed = name.trim();
-    if (trimmed) this.names[String(port)] = trimmed;
-    else delete this.names[String(port)];
-    this.applyNames();
-    this.emit("state", this.state);
+  getSettings(): AppSettings {
+    return this.settings;
   }
 
-  pinPort(port: number, pinned: boolean) {
-    if (pinned) this.pins.add(port);
-    else this.pins.delete(port);
+  start(): void {
+    void this.scanNow();
+    this.restartTimer();
+  }
+
+  stop(): void {
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+  }
+
+  async scanNow(): Promise<void> {
+    if (this.state.isScanning) {
+      return;
+    }
+
     this.state = {
       ...this.state,
-      entries: this.state.entries.map(e =>
-        e.port === port ? { ...e, pinned } : e
+      isScanning: true
+    };
+    this.emitState();
+
+    const result = await scanPorts();
+    this.pruneKilled();
+    const entries = this.applyCustomNames(result.entries).filter((entry) => !this.recentlyKilled.has(entry.port));
+
+    this.state = {
+      entries,
+      isScanning: false,
+      lastError: result.diagnostics.lastError,
+      diagnostics: result.diagnostics
+    };
+    this.emitState();
+  }
+
+  async killPort(port: number, pid: number): Promise<void> {
+    this.recentlyKilled.set(port, Date.now());
+    this.state = {
+      ...this.state,
+      entries: this.state.entries.map((entry) =>
+        entry.port === port ? { ...entry, status: "terminating" } : entry
       )
     };
-    this.emit("state", this.state);
-  }
+    this.emitState();
 
-  private applyNames() {
+    try {
+      await terminateProcess(pid);
+    } catch (error) {
+      this.recentlyKilled.delete(port);
+      this.state = {
+        ...this.state,
+        entries: this.state.entries.map((entry) =>
+          entry.port === port ? { ...entry, status: "error" } : entry
+        ),
+        lastError: error instanceof Error ? error.message : "Failed to terminate process"
+      };
+      this.emitState();
+      return;
+    }
+
     this.state = {
       ...this.state,
-      entries: this.state.entries.map(e => ({
-        ...e,
-        projectName: this.names[String(e.port)] || e.detectedProjectName
-      }))
+      entries: this.state.entries.filter((entry) => entry.port !== port)
     };
+    this.emitState();
   }
 
-  private async scan() {
-    this.state = { ...this.state, isScanning: true };
-    const raw = scanPorts();
-    const entries: PortEntry[] = raw.map(r => ({
-      id: String(r.port),
-      port: r.port,
-      pid: r.pid,
-      processName: r.processName,
-      projectName: this.names[String(r.port)] || r.processName,
-      detectedProjectName: r.processName,
-      branch: "",
-      cwd: r.cwd,
-      gitRoot: null,
-      startTime: null,
-      uptimeSeconds: null,
-      url: `http://localhost:${r.port}`,
-      status: "running",
-      pinned: this.pins.has(r.port),
+  async killAll(): Promise<void> {
+    const current = [...this.state.entries];
+    for (const entry of current) {
+      await this.killPort(entry.port, entry.pid);
+    }
+  }
+
+  async openPort(port: number): Promise<void> {
+    await shell.openExternal(`http://localhost:${port}`);
+  }
+
+  copyUrl(url: string): void {
+    clipboard.writeText(url);
+  }
+
+  copyPort(port: number): void {
+    clipboard.writeText(String(port));
+  }
+
+  renamePort(port: number, name: string): void {
+    const trimmed = name.trim();
+    const current = this.state.entries.find((entry) => entry.port === port);
+    if (!current) {
+      return;
+    }
+
+    if (!trimmed || trimmed === current.detectedProjectName) {
+      this.resetPortName(port);
+      return;
+    }
+
+    setCustomPortName(port, trimmed);
+    this.state = {
+      ...this.state,
+      entries: this.state.entries.map((entry) =>
+        entry.port === port ? { ...entry, projectName: trimmed } : entry
+      )
+    };
+    this.emitState();
+  }
+
+  resetPortName(port: number): void {
+    clearCustomPortName(port);
+    this.state = {
+      ...this.state,
+      entries: this.state.entries.map((entry) =>
+        entry.port === port ? { ...entry, projectName: entry.detectedProjectName } : entry
+      )
+    };
+    this.emitState();
+  }
+
+  setPinned(port: number, pinned: boolean): void {
+    setPinnedPort(port, pinned);
+    this.state = {
+      ...this.state,
+      entries: this.state.entries.map((entry) =>
+        entry.port === port ? { ...entry, pinned } : entry
+      )
+    };
+    this.emitState();
+  }
+
+  updateSettings(patch: Partial<AppSettings>): AppSettings {
+    this.settings = updateSettings(patch);
+    this.restartTimer();
+    return this.settings;
+  }
+
+  async toggleLaunchAtLogin(enabled: boolean): Promise<boolean> {
+    const nextValue = await setLaunchAtLogin(enabled);
+    this.settings = updateSettings({
+      launchAtLogin: nextValue
+    });
+    return nextValue;
+  }
+
+  private applyCustomNames(entries: PortEntry[]): PortEntry[] {
+    const names = getCustomPortNames();
+    const pinned = new Set(getPinnedPorts());
+    return entries.map((entry) => ({
+      ...entry,
+      projectName: names[String(entry.port)] || entry.detectedProjectName,
+      pinned: pinned.has(entry.port)
     }));
-    const sorted = [
-      ...entries.filter(e => e.pinned),
-      ...entries.filter(e => !e.pinned),
-    ];
-    this.state = { entries: sorted, isScanning: false, lastError: null, diagnostics: null };
+  }
+
+  private restartTimer(): void {
+    this.stop();
+    this.timer = setInterval(() => {
+      void this.scanNow();
+    }, this.settings.refreshIntervalSeconds * 1000);
+  }
+
+  private pruneKilled(): void {
+    const cutoff = Date.now() - 8_000;
+    for (const [port, timestamp] of this.recentlyKilled.entries()) {
+      if (timestamp < cutoff) {
+        this.recentlyKilled.delete(port);
+      }
+    }
+  }
+
+  private emitState(): void {
     this.emit("state", this.state);
   }
+}
+
+export function isPortEntry(payload: unknown): payload is PortEntry {
+  if (!payload || typeof payload !== "object") {
+    return false;
+  }
+
+  const value = payload as Record<string, unknown>;
+  return typeof value.port === "number" && typeof value.pid === "number" && typeof value.url === "string";
+}
+
+async function terminateProcess(pid: number): Promise<void> {
+  if (process.platform === "win32") {
+    await execFileAsync("taskkill", ["/PID", String(pid), "/T", "/F"], {
+      windowsHide: true
+    });
+    return;
+  }
+
+  try {
+    process.kill(pid, "SIGTERM");
+  } catch (error) {
+    throw new Error(error instanceof Error ? error.message : "SIGTERM failed");
+  }
+
+  await wait(800);
+
+  try {
+    process.kill(pid, 0);
+    process.kill(pid, "SIGKILL");
+  } catch {
+    // Process is already gone, which is the expected success path.
+  }
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
