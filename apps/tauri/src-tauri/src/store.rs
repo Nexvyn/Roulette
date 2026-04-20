@@ -1,26 +1,11 @@
-﻿use std::sync::{Arc, Mutex};
-use std::collections::{HashMap, HashSet};
-use crate::port_scanner::scan_ports;
-use serde::{Deserialize, Serialize};
+﻿use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use tokio::process::Command;
+
+use crate::port_scanner::{self, PortEntry, ScanDiagnostics};
+use crate::settings::{self, AppSettings};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PortEntry {
-    pub id: String,
-    pub port: u16,
-    pub pid: u32,
-    pub process_name: String,
-    pub project_name: String,
-    pub detected_project_name: String,
-    pub url: String,
-    pub status: String,
-    pub pinned: bool,
-    pub branch: String,
-    pub cwd: Option<String>,
-    pub uptime_seconds: Option<u64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ScanState {
     pub entries: Vec<PortEntry>,
@@ -29,101 +14,141 @@ pub struct ScanState {
     pub diagnostics: Option<ScanDiagnostics>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ScanDiagnostics {
-    pub duration_ms: u64,
-    pub ports_found: usize,
-    pub data_source: String,
-    pub timestamp: String,
-    pub last_error: Option<String>,
-}
-
-struct StoreData {
-    state: ScanState,
-    names: HashMap<u16, String>,
-    pins: HashSet<u16>,
-}
-
 pub struct AppStore {
-    data: Arc<Mutex<StoreData>>,
+    state: ScanState,
+    settings: AppSettings,
+    recently_killed: HashMap<u16, std::time::Instant>,
 }
 
 impl AppStore {
     pub fn new() -> Self {
         Self {
-            data: Arc::new(Mutex::new(StoreData {
-                state: ScanState::default(),
-                names: HashMap::new(),
-                pins: HashSet::new(),
-            }))
-        }
-    }
-
-    pub fn get_state(&self) -> ScanState {
-        self.data.lock().unwrap().state.clone()
-    }
-
-    pub fn rename_port(&self, port: u16, name: String) {
-        let mut d = self.data.lock().unwrap();
-        if name.is_empty() { d.names.remove(&port); } else { d.names.insert(port, name); }
-        Self::apply_names_inner(&mut d);
-    }
-
-    pub fn set_pinned(&self, port: u16, pinned: bool) {
-        let mut d = self.data.lock().unwrap();
-        if pinned { d.pins.insert(port); } else { d.pins.remove(&port); }
-        for e in &mut d.state.entries {
-            if e.port == port { e.pinned = pinned; }
-        }
-    }
-
-    fn apply_names_inner(d: &mut StoreData) {
-        for e in &mut d.state.entries {
-            if let Some(n) = d.names.get(&e.port) {
-                e.project_name = n.clone();
-            } else {
-                e.project_name = e.detected_project_name.clone();
-            }
-        }
-    }
-
-    pub async fn scan(&self) {
-        let start = std::time::Instant::now();
-        let raw = scan_ports().await;
-        let duration_ms = start.elapsed().as_millis() as u64;
-        let mut d = self.data.lock().unwrap();
-        let entries: Vec<PortEntry> = raw.into_iter().map(|r| {
-            let name = d.names.get(&r.port).cloned().unwrap_or_else(|| r.process_name.clone());
-            PortEntry {
-                id: r.port.to_string(),
-                port: r.port,
-                pid: r.pid,
-                process_name: r.process_name.clone(),
-                project_name: name,
-                detected_project_name: r.process_name,
-                url: format!("http://localhost:{}", r.port),
-                status: "running".to_string(),
-                pinned: d.pins.contains(&r.port),
-                branch: String::new(),
-                cwd: None,
-                uptime_seconds: None,
-            }
-        }).collect();
-        let ports_found = entries.len();
-        let mut sorted = entries;
-        sorted.sort_by_key(|e| (!e.pinned, e.port));
-        d.state = ScanState {
-            entries: sorted,
-            is_scanning: false,
-            last_error: None,
-            diagnostics: Some(ScanDiagnostics {
-                duration_ms,
-                ports_found,
-                data_source: "native".to_string(),
-                timestamp: String::new(),
+            state: ScanState {
+                entries: vec![],
+                is_scanning: false,
                 last_error: None,
-            }),
+                diagnostics: None,
+            },
+            settings: settings::get_settings(),
+            recently_killed: HashMap::new(),
+        }
+    }
+
+    pub fn get_state(&self) -> &ScanState {
+        &self.state
+    }
+
+    pub fn get_settings(&self) -> &AppSettings {
+        &self.settings
+    }
+
+    pub async fn scan_now(&mut self) {
+        if self.state.is_scanning { return; }
+        self.state.is_scanning = true;
+
+        let (entries, diag) = port_scanner::scan_ports().await;
+        self.prune_killed();
+
+        let entries = self.apply_custom_names(entries)
+            .into_iter()
+            .filter(|e| !self.recently_killed.contains_key(&e.port))
+            .collect();
+
+        self.state = ScanState {
+            entries,
+            is_scanning: false,
+            last_error: diag.last_error.clone(),
+            diagnostics: Some(diag),
         };
+    }
+
+    pub async fn kill_port(&mut self, port: u16, pid: u32) {
+        self.recently_killed.insert(port, std::time::Instant::now());
+
+        // Mark as terminating
+        for entry in &mut self.state.entries {
+            if entry.port == port { entry.status = "terminating".into(); }
+        }
+
+        if let Err(e) = terminate_process(pid).await {
+            self.recently_killed.remove(&port);
+            for entry in &mut self.state.entries {
+                if entry.port == port { entry.status = "error".into(); }
+            }
+            self.state.last_error = Some(e);
+            return;
+        }
+
+        self.state.entries.retain(|e| e.port != port);
+    }
+
+    pub async fn kill_all(&mut self) {
+        let ports: Vec<(u16, u32)> = self.state.entries.iter().map(|e| (e.port, e.pid)).collect();
+        for (port, pid) in ports {
+            self.kill_port(port, pid).await;
+        }
+    }
+
+    pub fn rename_port(&mut self, port: u16, name: &str) {
+        let trimmed = name.trim();
+        if trimmed.is_empty() { self.reset_port_name(port); return; }
+        settings::set_custom_port_name(port, trimmed);
+        for entry in &mut self.state.entries {
+            if entry.port == port { entry.project_name = trimmed.into(); }
+        }
+    }
+
+    pub fn reset_port_name(&mut self, port: u16) {
+        settings::clear_custom_port_name(port);
+        for entry in &mut self.state.entries {
+            if entry.port == port { entry.project_name = entry.detected_project_name.clone(); }
+        }
+    }
+
+    pub fn set_pinned(&mut self, port: u16, pinned: bool) {
+        settings::set_pinned_port(port, pinned);
+        for entry in &mut self.state.entries {
+            if entry.port == port { entry.pinned = pinned; }
+        }
+    }
+
+    pub fn update_settings(&mut self, patch: &serde_json::Value) {
+        self.settings = settings::update_settings(patch);
+    }
+
+    fn apply_custom_names(&self, entries: Vec<PortEntry>) -> Vec<PortEntry> {
+        let names = settings::get_custom_port_names();
+        let pinned = settings::get_pinned_ports();
+        entries.into_iter().map(|mut e| {
+            if let Some(custom) = names.get(&e.port.to_string()) {
+                e.project_name = custom.clone();
+            }
+            e.pinned = pinned.contains(&e.port);
+            e
+        }).collect()
+    }
+
+    fn prune_killed(&mut self) {
+        let cutoff = std::time::Duration::from_secs(8);
+        self.recently_killed.retain(|_, t| t.elapsed() < cutoff);
+    }
+}
+
+async fn terminate_process(pid: u32) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt as _;
+        let mut cmd = Command::new("taskkill");
+        cmd.args(["/PID", &pid.to_string(), "/T", "/F"]);
+        cmd.creation_flags(0x08000000);
+        cmd.output().await.map_err(|e| e.to_string())?;
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Command::new("kill").args(["-TERM", &pid.to_string()]).output().await.map_err(|e| e.to_string())?;
+        tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+        let _ = Command::new("kill").args(["-KILL", &pid.to_string()]).output().await;
+        Ok(())
     }
 }
