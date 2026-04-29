@@ -1,19 +1,37 @@
-# Port Menu Electron
+# Lyra — Electron
 
-Electron + React + TypeScript scaffold for a cross-platform Port Menu app.
+The primary desktop build of Lyra. Built with Electron, React, and TypeScript.
 
-## Scripts
+Electron was chosen first because it ships fast — no extra toolchain needed, and it produces a working Windows installer out of the box.
+
+## Run
 
 ```bash
 npm install
 npm run dev
 ```
 
-## Included
+## Build
 
-- Electron tray shell
-- React floating panel UI
-- Preload bridge with typed API
-- Cross-platform scanning service scaffold for macOS, Windows, and Linux
-- Settings persistence and launch-at-login wiring
-- Context menu, kill, open, copy, and refresh actions
+```bash
+npm run dist:win   # Windows installer → dist/
+npm run dist:mac   # macOS DMG
+npm run dist:linux # Linux AppImage
+```
+
+## Typecheck
+
+```bash
+npm run typecheck
+```
+
+## Structure
+
+```
+src/
+  main/           — Electron main process, tray, IPC
+    services/     — portScanner, portStore, settings, autoLaunch
+  preload/        — contextBridge (window.portMenu API)
+  renderer/src/   — React UI (App.tsx, styles.css)
+  shared/         — contracts.ts (shared TypeScript types)
+```
