@@ -24,8 +24,17 @@ const api: PortMenuApi = {
   renamePort: (port, name) => ipcRenderer.invoke("ports:rename", { port, name }) as Promise<void>,
   resetPortName: (port) => ipcRenderer.invoke("ports:rename:reset", port) as Promise<void>,
   setPinned: (port, pinned) => ipcRenderer.invoke("ports:pin", { port, pinned }) as Promise<void>,
+  startTunnel: (port) => ipcRenderer.invoke("tunnel:start", port) as Promise<void>,
+  stopTunnel: (port) => ipcRenderer.invoke("tunnel:stop", port) as Promise<void>,
   resizeWindow: (height) => ipcRenderer.send("window:resize", height),
   getSettings: () => ipcRenderer.invoke("settings:get") as Promise<AppSettings>,
+  subscribeToSettings: (listener) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, settings: AppSettings) => listener(settings);
+    ipcRenderer.on("settings:changed", wrapped);
+    return () => {
+      ipcRenderer.removeListener("settings:changed", wrapped);
+    };
+  },
   updateSettings: (patch) => ipcRenderer.invoke("settings:update", patch) as Promise<AppSettings>,
   toggleLaunchAtLogin: (enabled) =>
     ipcRenderer.invoke("settings:launchAtLogin", enabled) as Promise<boolean>,
