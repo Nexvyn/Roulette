@@ -1,4 +1,4 @@
-﻿import { execFile } from "node:child_process";
+import { execFile } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -202,7 +202,8 @@ async function buildEntries(parsed: ParsedPort[]): Promise<PortEntry[]> {
       uptimeSeconds,
       url: `http://localhost:${info.port}`,
       status: "running",
-      pinned: false
+      pinned: false,
+      tunnel: null
     });
   }
 
@@ -255,7 +256,6 @@ async function getWindowsProcessMap(): Promise<Map<number, WinProc>> {
       }
     }
   } catch {
-    // fall through to tasklist
   }
 
   if (map.size === 0) {
@@ -268,7 +268,6 @@ async function getWindowsProcessMap(): Promise<Map<number, WinProc>> {
         }
       }
     } catch {
-      // give up
     }
   }
 
@@ -314,7 +313,6 @@ async function findGitRoot(startPath: string): Promise<string | null> {
         return current;
       }
     } catch {
-      // keep walking
     }
     current = path.dirname(current);
   }
@@ -361,7 +359,6 @@ async function resolveProjectContext(cwd: string | null, gitRoot: string | null)
         projectContextCache.set(cwd, true);
         return true;
       } catch {
-        // keep scanning
       }
     }
 
