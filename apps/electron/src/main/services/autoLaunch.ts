@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 
 const LINUX_AUTOSTART_DIR = path.join(os.homedir(), ".config", "autostart");
-const LINUX_AUTOSTART_FILE = path.join(LINUX_AUTOSTART_DIR, "lyra.desktop");
+const LINUX_AUTOSTART_FILE = path.join(LINUX_AUTOSTART_DIR, "ports.desktop");
 const HIDDEN_ARG = "--hidden";
 
 export async function setLaunchAtLogin(enabled: boolean): Promise<boolean> {
@@ -42,7 +42,7 @@ async function setLinuxAutoLaunch(enabled: boolean): Promise<void> {
       `[Desktop Entry]
 Type=Application
 Version=1.0
-Name=Lyra
+Name=Roulette
 Comment=Monitor and control local dev servers
 Exec="${process.execPath}" ${HIDDEN_ARG}
 TryExec=${process.execPath}
