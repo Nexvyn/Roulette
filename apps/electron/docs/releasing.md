@@ -1,4 +1,4 @@
-# Releasing Port Menu
+# Releasing Roulette
 
 This document covers the maintainer workflow for shipping a signed, notarized direct-download DMG.
 
@@ -41,7 +41,7 @@ Optional environment variables:
 
 - `SCHEME` defaults to `Porter`
 - `PROJECT` defaults to `Porter.xcodeproj`
-- `APP_NAME` defaults to `Port Menu`
+- `APP_NAME` defaults to `Roulette`
 - `NOTARY_PROFILE` defaults to `AC_PASSWORD`
 - `NOTARY_APPLE_ID` optionally overrides keychain-profile auth
 - `NOTARY_PASSWORD` optionally overrides keychain-profile auth
@@ -56,13 +56,13 @@ The script produces:
 ## Verify the release
 
 ```bash
-spctl --assess --type execute --verbose=4 "dist/Port Menu.app"
-xcrun stapler validate "dist/Port Menu.app"
-codesign --verify --deep --strict --verbose=2 "dist/Port Menu.app"
-spctl --assess --type open --context context:primary-signature --verbose=4 "dist/Port Menu.dmg"
-xcrun stapler validate "dist/Port Menu.dmg"
-codesign --verify --verbose=2 "dist/Port Menu.dmg"
-shasum -a 256 "dist/Port Menu.dmg"
+spctl --assess --type execute --verbose=4 "dist/Roulette.app"
+xcrun stapler validate "dist/Roulette.app"
+codesign --verify --deep --strict --verbose=2 "dist/Roulette.app"
+spctl --assess --type open --context context:primary-signature --verbose=4 "dist/Roulette.dmg"
+xcrun stapler validate "dist/Roulette.dmg"
+codesign --verify --verbose=2 "dist/Roulette.dmg"
+shasum -a 256 "dist/Roulette.dmg"
 ```
 
 ## Publish to GitHub Releases
@@ -70,12 +70,12 @@ shasum -a 256 "dist/Port Menu.dmg"
 Create a versioned asset name and publish it:
 
 ```bash
-cp "dist/Port Menu.dmg" "dist/PortMenu-<version>.dmg"
-gh release create "v<version>" "dist/PortMenu-<version>.dmg#PortMenu-<version>.dmg"
+cp "dist/Roulette.dmg" "dist/Roulette-<version>.dmg"
+gh release create "v<version>" "dist/Roulette-<version>.dmg#Roulette-<version>.dmg"
 ```
 
 Or upload the asset to an existing draft release:
 
 ```bash
-gh release upload "v<version>" "dist/PortMenu-<version>.dmg#PortMenu-<version>.dmg"
+gh release upload "v<version>" "dist/Roulette-<version>.dmg#Roulette-<version>.dmg"
 ```

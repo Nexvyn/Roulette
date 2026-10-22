@@ -1,8 +1,8 @@
-# Lyra — Electron
+# Roulette - Electron
 
-The primary desktop build of Lyra. Built with Electron, React, and TypeScript.
+The primary desktop build of Roulette. Built with Electron, React, and TypeScript.
 
-Electron was chosen first because it ships fast — no extra toolchain needed, and it produces a working Windows installer out of the box.
+Electron was chosen first because it ships fast - no extra toolchain needed, and it produces a working Windows installer out of the box.
 
 ## Run
 
@@ -29,9 +29,9 @@ npm run typecheck
 
 ```
 src/
-  main/           — Electron main process, tray, IPC
-    services/     — portScanner, portStore, settings, autoLaunch
-  preload/        — contextBridge (window.portMenu API)
-  renderer/src/   — React UI (App.tsx, styles.css)
-  shared/         — contracts.ts (shared TypeScript types)
+  main/           - Electron main process, tray, IPC
+    services/     - portScanner, portStore, settings, autoLaunch
+  preload/        - contextBridge (window.portMenu API)
+  renderer/src/   - React UI (App.tsx, styles.css)
+  shared/         - contracts.ts (shared TypeScript types)
 ```

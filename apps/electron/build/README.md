@@ -1,14 +1,17 @@
 # Build Resources
 
-This folder holds packaging assets for Electron Builder.
+Packaging assets that Electron Builder reads (`directories.buildResources`). Commit this folder.
 
-## Current assets
+## Assets
 
-- `icon.svg` for Linux packaging and placeholder branding
+- `icon.icns` for macOS
+- `icon.ico` for Windows
+- `icon.png` for Linux and as the source image
+- `icon.svg` for the Linux package icon
+
+All four are drawn from the Spark mark in `assets/logo.svg`.
 
 ## Before shipping production builds
 
-- add `icon.ico` for Windows
-- add `icon.icns` for macOS
 - add code signing and notarization settings for release pipelines
 - configure Electron Updater publish settings for your release host
