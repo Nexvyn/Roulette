@@ -1,10 +1,11 @@
-﻿import { EventEmitter } from "node:events";
+import { EventEmitter } from "node:events";
 import { execFile } from "node:child_process";
 import { clipboard, shell } from "electron";
 import { promisify } from "node:util";
 import type { AppSettings, PortEntry, ScanState } from "@shared/contracts";
 import { getLaunchAtLogin, setLaunchAtLogin } from "./autoLaunch";
 import { scanPorts } from "./portScanner";
+import { TunnelManager } from "./tunnel";
 import {
   clearCustomPortName,
   getCustomPortNames,
@@ -28,6 +29,7 @@ export class PortStore extends EventEmitter {
   private settings: AppSettings;
   private timer: NodeJS.Timeout | null = null;
   private recentlyKilled = new Map<number, number>();
+  private tunnels = new TunnelManager();
 
   constructor() {
     super();
@@ -35,6 +37,7 @@ export class PortStore extends EventEmitter {
       ...getSettings(),
       launchAtLogin: getLaunchAtLogin()
     };
+    this.tunnels.on("change", () => this.redecorate());
   }
 
   getState(): ScanState {
@@ -51,6 +54,7 @@ export class PortStore extends EventEmitter {
   }
 
   stop(): void {
+    this.tunnels.stopAll();
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
@@ -70,7 +74,11 @@ export class PortStore extends EventEmitter {
 
     const result = await scanPorts();
     this.pruneKilled();
-    const entries = this.applyCustomNames(result.entries).filter((entry) => !this.recentlyKilled.has(entry.port));
+    const found = this.applyCustomNames(result.entries).filter((entry) => !this.recentlyKilled.has(entry.port));
+    for (const port of this.tunnels.ports()) {
+      if (!found.some((entry) => entry.port === port)) this.tunnels.stop(port);
+    }
+    const entries = this.decorate(found);
 
     this.state = {
       entries,
@@ -83,6 +91,7 @@ export class PortStore extends EventEmitter {
 
   async killPort(port: number, pid: number): Promise<void> {
     this.recentlyKilled.set(port, Date.now());
+    this.tunnels.stop(port);
     this.state = {
       ...this.state,
       entries: this.state.entries.map((entry) =>
@@ -176,6 +185,23 @@ export class PortStore extends EventEmitter {
     this.emitState();
   }
 
+  startTunnel(port: number): void {
+    this.tunnels.start(port);
+  }
+
+  stopTunnel(port: number): void {
+    this.tunnels.stop(port);
+  }
+
+  private redecorate(): void {
+    this.state = { ...this.state, entries: this.decorate(this.state.entries) };
+    this.emitState();
+  }
+
+  private decorate(entries: PortEntry[]): PortEntry[] {
+    return entries.map((entry) => ({ ...entry, tunnel: this.tunnels.get(entry.port) }));
+  }
+
   updateSettings(patch: Partial<AppSettings>): AppSettings {
     this.settings = updateSettings(patch);
     this.restartTimer();
@@ -201,7 +227,7 @@ export class PortStore extends EventEmitter {
   }
 
   private restartTimer(): void {
-    this.stop();
+    if (this.timer) clearInterval(this.timer);
     this.timer = setInterval(() => {
       void this.scanNow();
     }, this.settings.refreshIntervalSeconds * 1000);
