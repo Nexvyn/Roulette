@@ -4,3 +4,5 @@ out/
 .env
 *.log
 .DS_Store
+# electron-vite leaves a temp copy of its config here when a build is interrupted
+electron.vite.config.*.mjs

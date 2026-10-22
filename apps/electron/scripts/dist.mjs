@@ -52,6 +52,6 @@ async function cleanupArtifacts(args) {
   await Promise.allSettled([
     rm(resolve(distDir, "builder-debug.yml"), { force: true }),
     rm(resolve(distDir, "win-unpacked"), { recursive: true, force: true }),
-    rm(resolve(distDir, "Port Menu-0.1.0-win-x64.exe.blockmap"), { force: true })
+    rm(resolve(distDir, "Roulette-0.1.0-win-x64.exe.blockmap"), { force: true })
   ]);
 }

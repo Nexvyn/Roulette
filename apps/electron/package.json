@@ -1,8 +1,8 @@
 {
-  "name": "lyra",
+  "name": "roulette",
   "version": "0.1.0",
   "private": true,
-  "description": "Cross-platform tray app for local dev server discovery.",
+  "description": "Menu-bar app that lists every local dev server, with one-click stop, open and public share links.",
   "main": "out/main/index.js",
   "type": "module",
   "scripts": {
@@ -16,8 +16,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "build": {
-    "appId": "com.lyra.app",
-    "productName": "Lyra",
+    "appId": "com.ports.app",
+    "productName": "Roulette",
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "compression": "maximum",
     "asar": true,
@@ -32,6 +32,9 @@
     ],
     "mac": {
       "category": "public.app-category.developer-tools",
+      "extendInfo": {
+        "LSUIElement": true
+      },
       "target": [
         "dmg",
         "zip"
@@ -46,7 +49,7 @@
       "icon": "build/icon.svg"
     },
     "win": {
-      "signAndEditExecutable": false,
+      "signExecutable": false,
       "target": [
         "nsis"
       ]
@@ -58,9 +61,13 @@
     }
   },
   "dependencies": {
+    "@hugeicons/core-free-icons": "^4.3.5",
+    "@hugeicons/react": "^1.1.10",
     "electron-store": "^10.0.1",
+    "motion": "^13.5.1",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "runeicons-brands": "^0.1.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
