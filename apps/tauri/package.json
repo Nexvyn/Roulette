@@ -1,5 +1,5 @@
 {
-  "name": "lyra",
+  "name": "ports",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,9 +9,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@hugeicons/core-free-icons": "^4.3.5",
+    "@hugeicons/react": "^1.1.10",
+    "@tauri-apps/api": "^2.5.0",
+    "motion": "^13.5.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "@tauri-apps/api": "^2.5.0"
+    "runeicons-brands": "^0.1.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
