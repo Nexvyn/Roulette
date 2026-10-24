@@ -1,13 +1,12 @@
 {
   "identifier": "default",
-  "description": "Default permissions for Port Menu",
+  "description": "Default permissions for Roulette",
   "windows": ["main"],
   "permissions": [
     "core:default",
     "core:event:default",
     "core:event:allow-emit",
     "core:event:allow-listen",
-    "core:window:allow-set-size",
-    "shell:allow-open"
+    "core:window:allow-set-size"
   ]
 }
