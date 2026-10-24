@@ -46,7 +46,7 @@ impl Default for StoredData {
 
 fn config_path() -> PathBuf {
     let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-    base.join("Porter").join("settings.json")
+    base.join("Ports").join("settings.json")
 }
 
 fn load() -> StoredData {
