@@ -1,9 +1,11 @@
-﻿use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::process::Command;
 
 use crate::port_scanner::{self, PortEntry, ScanDiagnostics};
 use crate::settings::{self, AppSettings};
+use crate::tunnel::TunnelInfo;
+use tokio::sync::oneshot;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -18,6 +20,8 @@ pub struct AppStore {
     state: ScanState,
     settings: AppSettings,
     recently_killed: HashMap<u16, std::time::Instant>,
+    tunnels: HashMap<u16, TunnelInfo>,
+    tunnel_stops: HashMap<u16, oneshot::Sender<()>>,
 }
 
 impl AppStore {
@@ -31,6 +35,8 @@ impl AppStore {
             },
             settings: settings::get_settings(),
             recently_killed: HashMap::new(),
+            tunnels: HashMap::new(),
+            tunnel_stops: HashMap::new(),
         }
     }
 
@@ -52,7 +58,13 @@ impl AppStore {
         let entries = self.apply_custom_names(entries)
             .into_iter()
             .filter(|e| !self.recently_killed.contains_key(&e.port))
-            .collect();
+            .collect::<Vec<PortEntry>>();
+
+        let gone: Vec<u16> = self.tunnels.keys().copied().filter(|p| !entries.iter().any(|e| e.port == *p)).collect();
+        for port in gone {
+            self.end_tunnel(port);
+        }
+        let entries = entries.into_iter().map(|mut e| { e.tunnel = self.tunnels.get(&e.port).cloned(); e }).collect();
 
         self.state = ScanState {
             entries,
@@ -64,8 +76,8 @@ impl AppStore {
 
     pub async fn kill_port(&mut self, port: u16, pid: u32) {
         self.recently_killed.insert(port, std::time::Instant::now());
+        self.end_tunnel(port);
 
-        // Mark as terminating
         for entry in &mut self.state.entries {
             if entry.port == port { entry.status = "terminating".into(); }
         }
@@ -112,6 +124,46 @@ impl AppStore {
         }
     }
 
+    pub fn begin_tunnel(&mut self, port: u16, info: TunnelInfo, stop: oneshot::Sender<()>) -> bool {
+        if self.tunnels.get(&port).is_some_and(|t| t.status != "error") {
+            return false;
+        }
+        self.tunnel_stops.insert(port, stop);
+        self.set_tunnel(port, info);
+        true
+    }
+
+    pub fn tunnel_status(&self, port: u16) -> Option<String> {
+        self.tunnels.get(&port).map(|t| t.status.clone())
+    }
+
+    pub fn set_tunnel(&mut self, port: u16, info: TunnelInfo) {
+        self.tunnels.insert(port, info.clone());
+        for entry in &mut self.state.entries {
+            if entry.port == port { entry.tunnel = Some(info.clone()); }
+        }
+    }
+
+    pub fn fail_tunnel(&mut self, port: u16, info: TunnelInfo) {
+        self.tunnel_stops.remove(&port);
+        self.set_tunnel(port, info);
+    }
+
+    pub fn end_tunnel(&mut self, port: u16) {
+        if let Some(stop) = self.tunnel_stops.remove(&port) {
+            let _ = stop.send(());
+        }
+        self.tunnels.remove(&port);
+        for entry in &mut self.state.entries {
+            if entry.port == port { entry.tunnel = None; }
+        }
+    }
+
+    pub fn stop_all_tunnels(&mut self) {
+        let ports: Vec<u16> = self.tunnels.keys().copied().collect();
+        for port in ports { self.end_tunnel(port); }
+    }
+
     pub fn update_settings(&mut self, patch: &serde_json::Value) {
         self.settings = settings::update_settings(patch);
     }
@@ -137,7 +189,6 @@ impl AppStore {
 async fn terminate_process(pid: u32) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt as _;
         let mut cmd = Command::new("taskkill");
         cmd.args(["/PID", &pid.to_string(), "/T", "/F"]);
         cmd.creation_flags(0x08000000);
