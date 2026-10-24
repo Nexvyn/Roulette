@@ -1,4 +1,4 @@
-﻿use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -42,6 +42,7 @@ pub struct PortEntry {
     pub url: String,
     pub status: String,
     pub pinned: bool,
+    pub tunnel: Option<crate::tunnel::TunnelInfo>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -184,6 +185,7 @@ async fn build_entries(parsed: Vec<ParsedPort>) -> Vec<PortEntry> {
             url: format!("http://localhost:{}", info.port),
             status: "running".into(),
             pinned: false,
+            tunnel: None,
         });
     }
     result
@@ -435,7 +437,7 @@ async fn get_start_time_and_uptime(pid: u32) -> (Option<String>, Option<u64>) {
         if let Ok(out) = run_cmd("powershell", &["-NoProfile", "-Command", &script]).await {
             let s = out.trim().to_string();
             if !s.is_empty() {
-                return (Some(s), None); // Frontend computes uptime from ISO string
+                return (Some(s), None);
             }
         }
         (None, None)
@@ -470,17 +472,15 @@ fn new_hidden_cmd(program: &str, args: &[&str]) -> Command {
     cmd.args(args);
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt as _;
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
     cmd
 }
 
 fn now_iso() -> String {
-    // Minimal ISO timestamp
     let d = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
     let secs = d.as_secs();
-    // Return unix timestamp as string - frontend doesn't use this for display
+    // unix seconds; the panel never displays it
     format!("{}", secs)
 }
 
