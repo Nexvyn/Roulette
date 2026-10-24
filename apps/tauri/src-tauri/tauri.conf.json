@@ -1,8 +1,8 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicedoc/tauri/v2/tooling/cli/schema.json",
-  "productName": "Lyra",
+  "productName": "Roulette",
   "version": "0.1.0",
-  "identifier": "com.lyra.app",
+  "identifier": "com.ports.app",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
@@ -11,10 +11,11 @@
   },
   "app": {
     "withGlobalTauri": true,
+    "macOSPrivateApi": true,
     "windows": [
       {
         "label": "main",
-        "title": "Lyra",
+        "title": "Roulette",
         "width": 340,
         "height": 380,
         "resizable": false,
@@ -25,18 +26,9 @@
         "transparent": true,
         "alwaysOnTop": true,
         "skipTaskbar": true,
-        "visible": false,
-        "windowEffects": {
-          "effects": ["acrylic"],
-          "radius": 12
-        }
+        "visible": false
       }
-    ],
-    "trayIcon": {
-      "iconPath": "icons/icon.png",
-      "iconAsTemplate": true,
-      "tooltip": "Lyra"
-    }
+    ]
   },
   "bundle": {
     "active": true,
