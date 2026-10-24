@@ -1,10 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#7C3AED"/>
-      <stop offset="100%" style="stop-color:#4F46E5"/>
-    </linearGradient>
-  </defs>
-  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
-  <text x="256" y="360" font-family="system-ui, -apple-system, sans-serif" font-size="280" font-weight="700" fill="white" text-anchor="middle">L</text>
+  <rect x="1" y="1" width="510" height="510" rx="131" fill="#fff" stroke="#e2e2e5" stroke-width="2"/>
+  <g transform="translate(256 256) scale(3.17) translate(-50 -50)" fill="#111">
+    <rect x="42" y="3" width="16" height="31" rx="8"/>
+    <rect x="42" y="3" width="16" height="31" rx="8" transform="rotate(60 50 50)"/>
+    <rect x="42" y="3" width="16" height="31" rx="8" transform="rotate(120 50 50)"/>
+    <rect x="42" y="3" width="16" height="31" rx="8" transform="rotate(180 50 50)"/>
+    <rect x="42" y="3" width="16" height="31" rx="8" transform="rotate(240 50 50)"/>
+    <rect x="42" y="3" width="16" height="31" rx="8" transform="rotate(300 50 50)"/>
+    <circle cx="50" cy="50" r="9.5"/>
+  </g>
 </svg>
