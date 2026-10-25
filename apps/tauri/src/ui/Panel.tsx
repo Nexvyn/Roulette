@@ -24,7 +24,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { runtimeFor } from "./runtime";
 import { Squircle, useSquircle } from "./squircle";
-import type { AppSettings, PortEntry, ScanState, SortOption, TunnelInfo } from "./types";
+import type { AppSettings, LinkExpiry, PortEntry, ScanState, SortOption, TunnelInfo } from "./types";
 import "./panel.css";
 
 export interface Backend {
@@ -140,6 +140,14 @@ function RuntimeTile({ entry }: { entry: PortEntry }) {
   );
 }
 
+function timeLeft(at: number | null) {
+  if (at === null) return null;
+  const m = Math.max(1, Math.ceil((at - Date.now()) / 60000));
+  return m < 60 ? `${m}m left` : `${Math.floor(m / 60)}h ${m % 60}m left`;
+}
+
+const EXPIRY_LABEL: Record<LinkExpiry, string> = { "1h": "1 hour", "4h": "4 hours", never: "Never" };
+
 function TunnelLine({ tunnel, copied, onCopy }: { tunnel: TunnelInfo | null; copied: boolean; onCopy: () => void }) {
   const key = !tunnel ? "none" : copied ? "copied" : tunnel.status;
   return (
@@ -182,6 +190,7 @@ function TunnelLine({ tunnel, copied, onCopy }: { tunnel: TunnelInfo | null; cop
                         ? tunnel.url.replace("https://", "")
                         : "Getting a public link… (up to 30s)"}
                 </span>
+                {tunnel.status === "live" && !copied && tunnel.expiresAt !== null ? <span className="sp-tunnel-left">{timeLeft(tunnel.expiresAt)}</span> : null}
               </motion.span>
             </AnimatePresence>
           </button>
@@ -394,6 +403,8 @@ function SettingsView({ settings, backend }: { settings: AppSettings; backend: B
         onChange={(v) => backend.updateSettings({ refreshIntervalSeconds: v })}
         format={(n) => `${n}s`}
       />
+      {label("Shared links expire after")}
+      <Segmented<LinkExpiry> value={settings.linkExpiry} options={["1h", "4h", "never"] as const} onChange={(v) => backend.updateSettings({ linkExpiry: v })} format={(v) => EXPIRY_LABEL[v]} />
       {label("Sharing")}
       <Squircle radius={10} className="sp-share-card">
         <I icon={Globe02Icon} size={14} className="sp-accent" />

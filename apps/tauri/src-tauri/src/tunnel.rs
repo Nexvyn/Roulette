@@ -16,34 +16,44 @@ pub struct TunnelInfo {
     pub status: String,
     pub url: Option<String>,
     pub error: Option<String>,
+    pub expires_at: Option<i64>,
 }
 
 impl TunnelInfo {
     fn starting() -> Self {
-        Self { status: "starting".into(), url: None, error: None }
+        Self { status: "starting".into(), url: None, error: None, expires_at: None }
     }
 
-    fn live(url: String) -> Self {
-        Self { status: "live".into(), url: Some(url), error: None }
+    fn live(url: String, expires_at: Option<i64>) -> Self {
+        Self { status: "live".into(), url: Some(url), error: None, expires_at }
     }
 
     fn error(message: String) -> Self {
-        Self { status: "error".into(), url: None, error: Some(message) }
+        Self { status: "error".into(), url: None, error: Some(message), expires_at: None }
     }
+}
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
 }
 
 pub async fn start(app: AppHandle, store: Arc<Mutex<AppStore>>, port: u16) {
     let (stop_tx, stop_rx) = oneshot::channel();
+    let lifetime;
     {
         let mut s = store.lock().await;
         if !s.begin_tunnel(port, TunnelInfo::starting(), stop_tx) {
             return;
         }
+        lifetime = crate::settings::link_expiry_minutes(&s.get_settings().link_expiry).map(|m| Duration::from_secs(m * 60));
         crate::emit_state(&app, &s);
     }
 
     tauri::async_runtime::spawn(async move {
-        let outcome = run(&app, &store, port, stop_rx).await;
+        let outcome = run(&app, &store, port, stop_rx, lifetime).await;
         let mut s = store.lock().await;
         match outcome {
             Outcome::Stopped => return,
@@ -82,7 +92,7 @@ fn search_path() -> std::ffi::OsString {
     std::env::join_paths(dirs).unwrap_or_default()
 }
 
-async fn run(app: &AppHandle, store: &Arc<Mutex<AppStore>>, port: u16, mut stop_rx: oneshot::Receiver<()>) -> Outcome {
+async fn run(app: &AppHandle, store: &Arc<Mutex<AppStore>>, port: u16, mut stop_rx: oneshot::Receiver<()>, lifetime: Option<Duration>) -> Outcome {
     let mut cmd = Command::new("cloudflared");
     cmd.args(["tunnel", "--no-autoupdate", "--url", &format!("http://localhost:{port}")])
         .env("PATH", search_path())
@@ -113,10 +123,13 @@ async fn run(app: &AppHandle, store: &Arc<Mutex<AppStore>>, port: u16, mut stop_
     let timeout = tokio::time::sleep(Duration::from_secs(30));
     tokio::pin!(timeout);
     let mut live = false;
+    let expiry = tokio::time::sleep(Duration::from_secs(60 * 60 * 24 * 365));
+    tokio::pin!(expiry);
 
     loop {
         tokio::select! {
             _ = &mut stop_rx => return Outcome::Stopped,
+            _ = &mut expiry, if live && lifetime.is_some() => return Outcome::Exited,
             _ = &mut timeout, if !live => {
                 return Outcome::Failed("Timed out waiting for Cloudflare to assign a URL.".into());
             }
@@ -126,12 +139,16 @@ async fn run(app: &AppHandle, store: &Arc<Mutex<AppStore>>, port: u16, mut stop_
                     registered |= text.contains("Registered tunnel connection");
                     if let (Some(found), true) = (&url, registered) {
                         live = true;
+                        let expires_at = lifetime.map(|d| {
+                            expiry.as_mut().reset(tokio::time::Instant::now() + d);
+                            now_ms() + d.as_millis() as i64
+                        });
                         let (app, store, link) = (app.clone(), store.clone(), found.clone());
                         tauri::async_runtime::spawn(async move {
                             wait_for_dns(&link).await;
                             let mut s = store.lock().await;
                             if s.tunnel_status(port).as_deref() == Some("starting") {
-                                s.set_tunnel(port, TunnelInfo::live(link));
+                                s.set_tunnel(port, TunnelInfo::live(link, expires_at));
                                 crate::emit_state(&app, &s);
                             }
                         });

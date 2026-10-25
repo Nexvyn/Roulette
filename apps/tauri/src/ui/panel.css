@@ -106,6 +106,7 @@
 }
 
 .sp-search-wrap { flex: none; padding: 0 10px; }
+.sp-tunnel-left { flex: none; margin-left: 6px; color: var(--ter); font-variant-numeric: tabular-nums; }
 .sp-search {
   display: flex; height: 30px; align-items: center; gap: 8px; padding: 0 10px; border-radius: 8px; background: var(--field);
   transition: box-shadow 150ms ease-out;

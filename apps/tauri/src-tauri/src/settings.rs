@@ -12,6 +12,20 @@ pub struct AppSettings {
     pub show_diagnostics: bool,
     pub sort_by: String,
     pub theme_source: String,
+    #[serde(default = "default_link_expiry")]
+    pub link_expiry: String,
+}
+
+fn default_link_expiry() -> String {
+    "never".into()
+}
+
+pub fn link_expiry_minutes(value: &str) -> Option<u64> {
+    match value {
+        "1h" => Some(60),
+        "4h" => Some(240),
+        _ => None,
+    }
 }
 
 impl Default for AppSettings {
@@ -23,6 +37,7 @@ impl Default for AppSettings {
             show_diagnostics: false,
             sort_by: "port".into(),
             theme_source: "system".into(),
+            link_expiry: default_link_expiry(),
         }
     }
 }
@@ -93,6 +108,11 @@ pub fn update_settings(patch: &serde_json::Value) -> AppSettings {
     }
     if let Some(v) = patch.get("sortBy").and_then(|v| v.as_str()) {
         data.settings.sort_by = v.to_string();
+    }
+    if let Some(v) = patch.get("linkExpiry").and_then(|v| v.as_str()) {
+        if ["1h", "4h", "never"].contains(&v) {
+            data.settings.link_expiry = v.to_string();
+        }
     }
     save(&data);
     data.settings

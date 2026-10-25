@@ -4,6 +4,7 @@ export interface TunnelInfo {
   status: "starting" | "live" | "error";
   url: string | null;
   error: string | null;
+  expiresAt: number | null;
 }
 
 export interface ContainerInfo {
@@ -54,4 +55,7 @@ export interface AppSettings {
   showDiagnostics: boolean;
   sortBy: SortOption;
   themeSource: "system";
+  linkExpiry: LinkExpiry;
 }
+
+export type LinkExpiry = "1h" | "4h" | "never";
