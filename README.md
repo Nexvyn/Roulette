@@ -80,6 +80,20 @@ pnpm tauri build
 
 Installers land in `apps/tauri/src-tauri/target/release/bundle/`. A macOS build has to be made on a Mac.
 
+### Releases
+
+The **Release** workflow (`.github/workflows/release.yml`) builds the Tauri app on GitHub for
+macOS (one universal build for Apple Silicon and Intel), Windows and Linux, and attaches the
+installers to a draft GitHub Release. It runs when you push a version tag:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+You can also start it by hand from the repository's **Actions** tab. Check the draft release,
+then publish it.
+
 ## License
 
 [MIT](LICENSE)
