@@ -33,7 +33,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "ROULETTE_UPDATER_PUBLIC_KEY",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDc1RTdGQjNBNDlGNzlBMkYKUldRdm12ZEpPdnZuZFFUMjN4KzlJNWV2bmszTEZ6NWZmY0tYZEdoNFFFOU1tVzg0bG9QUUUyTXEK",
       "endpoints": ["https://github.com/Nexvyn/Roulette/releases/latest/download/latest.json"]
     }
   },
