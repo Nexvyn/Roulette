@@ -24,7 +24,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { runtimeFor } from "./runtime";
 import { Squircle, useSquircle } from "./squircle";
-import type { AppSettings, LinkExpiry, PortEntry, ScanState, SortOption, TunnelInfo } from "./types";
+import type { AppSettings, LinkExpiry, PortEntry, ScanState, SortOption, TunnelInfo, UpdateInfo } from "./types";
 import "./panel.css";
 
 export interface Backend {
@@ -40,6 +40,7 @@ export interface Backend {
   stopTunnel(port: number): void;
   updateSettings(patch: Partial<AppSettings>): void;
   setLaunchAtLogin(enabled: boolean): void;
+  installUpdate(): void;
   quit(): void;
 }
 
@@ -505,9 +506,11 @@ export function Panel({
   backend,
   apiError,
   panelRef,
+  update = null,
 }: {
   state: ScanState;
   settings: AppSettings;
+  update?: UpdateInfo | null;
   backend: Backend;
   apiError: string | null;
   panelRef: React.RefObject<HTMLDivElement | null>;
@@ -869,6 +872,17 @@ export function Panel({
               </motion.div>
             ) : (
               <motion.div key="list" initial={viewIn(-1)} animate={viewShown} exit={viewOut(-1)} transition={{ duration: 0.2, ease }}>
+      {update ? (
+        <motion.div className="sp-update" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.15, ease }}>
+          <I icon={RefreshIcon} size={13} />
+          <span className="sp-truncate">
+            {APP_NAME} {update.version} is available
+          </span>
+          <button type="button" className="sp-update-btn" disabled={update.installing} onClick={() => backend.installUpdate()}>
+            {update.manual ? "Download" : update.installing ? "Updating…" : "Restart to update"}
+          </button>
+        </motion.div>
+      ) : null}
       <div className="sp-search-wrap">
         <label className="sp-search">
           <I icon={Search01Icon} size={14} className="sp-ter" />

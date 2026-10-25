@@ -33,6 +33,12 @@ export interface PortEntry {
   container: ContainerInfo | null;
 }
 
+export interface UpdateInfo {
+  version: string;
+  manual: boolean;
+  installing: boolean;
+}
+
 export interface ScanDiagnostics {
   durationMs: number;
   portsFound: number;

@@ -5,6 +5,7 @@ mod port_scanner;
 mod settings;
 mod store;
 mod tunnel;
+mod updater;
 
 use store::AppStore;
 use tauri::{
@@ -422,6 +423,8 @@ fn main() {
             }
         }))
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(updater::Updates::default())
         .setup(|app| {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
@@ -504,6 +507,8 @@ fn main() {
                 }
             });
 
+            updater::start(app.handle().clone());
+
             #[cfg(any(debug_assertions, target_os = "macos"))]
             if let Some(w) = app.get_webview_window("main") {
                 toggle_window(&w, None);
@@ -552,6 +557,8 @@ fn main() {
             toggle_launch_at_login,
             quit_app,
             resize_window,
+            updater::get_update,
+            updater::install_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

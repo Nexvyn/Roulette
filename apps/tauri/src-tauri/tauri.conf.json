@@ -30,6 +30,12 @@
       }
     ]
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "ROULETTE_UPDATER_PUBLIC_KEY",
+      "endpoints": ["https://github.com/Nexvyn/Roulette/releases/latest/download/latest.json"]
+    }
+  },
   "bundle": {
     "active": true,
     "homepage": "https://roulette.nexvyn.dev",

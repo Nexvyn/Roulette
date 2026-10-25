@@ -4,13 +4,14 @@ import { listen } from "@tauri-apps/api/event";
 import { Panel, type Backend } from "./ui/Panel";
 import { Onboarding } from "./ui/Onboarding";
 import { useWindowFit } from "./ui/windowFit";
-import type { AppSettings, ScanState } from "./ui/types";
+import type { AppSettings, ScanState, UpdateInfo } from "./ui/types";
 
 const initialState: ScanState = { entries: [], isScanning: true, lastError: null, diagnostics: null };
 
 export function App() {
   const [state, setState] = useState<ScanState>(initialState);
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [update, setUpdate] = useState<UpdateInfo | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -18,9 +19,12 @@ export function App() {
     invoke<ScanState>("get_state").then(setState).catch(console.error);
     const unlisten = listen<ScanState>("state-changed", (e) => setState(e.payload));
     const unlistenSettings = listen<AppSettings>("settings-changed", (e) => setSettings(e.payload));
+    invoke<UpdateInfo | null>("get_update").then(setUpdate).catch(console.error);
+    const unlistenUpdate = listen<UpdateInfo | null>("update-changed", (e) => setUpdate(e.payload));
     return () => {
       unlisten.then((fn) => fn());
       unlistenSettings.then((fn) => fn());
+      unlistenUpdate.then((fn) => fn());
     };
   }, []);
 
@@ -46,6 +50,7 @@ export function App() {
       },
       setLaunchAtLogin: (enabled) =>
         void invoke<boolean>("toggle_launch_at_login", { enabled }).then((on) => setSettings((s) => (s ? { ...s, launchAtLogin: on } : s))),
+      installUpdate: () => void invoke("install_update").catch(console.error),
       quit: () => void invoke("quit_app"),
     };
   }, []);
@@ -68,7 +73,7 @@ export function App() {
 
   return (
     <div className={`shell ${atBottom ? "at-bottom" : ""}`}>
-      <Panel state={state} settings={settings} backend={backend} apiError={null} panelRef={panelRef} />
+      <Panel state={state} settings={settings} backend={backend} apiError={null} panelRef={panelRef} update={update} />
     </div>
   );
 }
