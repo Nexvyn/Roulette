@@ -240,11 +240,27 @@ fn set_clipboard(app: &AppHandle, text: &str) -> Result<(), String> {
 }
 
 static LAST_ANCHOR: std::sync::Mutex<Option<(f64, f64)>> = std::sync::Mutex::new(None);
+static BLUR_HIDDEN: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+static SHOW_WHEN_READY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn hide_on_blur(window: &WebviewWindow) {
+    if window.is_visible().unwrap_or(false) {
+        let _ = window.hide();
+        if let Ok(mut at) = BLUR_HIDDEN.lock() {
+            *at = Some(std::time::Instant::now());
+        }
+        sync_show_label(window);
+    }
+}
+
+fn just_hidden_by_blur() -> bool {
+    BLUR_HIDDEN.lock().ok().and_then(|at| *at).is_some_and(|at| at.elapsed() < std::time::Duration::from_millis(300))
+}
 
 fn toggle_window(window: &WebviewWindow, anchor: Option<tauri::PhysicalPosition<f64>>) {
     if window.is_visible().unwrap_or(false) {
         let _ = window.hide();
-    } else {
+    } else if anchor.is_none() || !just_hidden_by_blur() {
         if let Ok(mut last) = LAST_ANCHOR.lock() {
             *last = anchor.map(|a| (a.x, a.y));
         }
@@ -311,13 +327,58 @@ fn place_near_tray(window: &WebviewWindow, size: (i32, i32)) {
 
     let area = monitor.work_area();
     let (x, y) = compute_position(
-        (area.position.x, area.position.y, area.size.width as i32, area.size.height as i32),
+        without_taskbar((area.position.x, area.position.y, area.size.width as i32, area.size.height as i32)),
         size,
         (12.0 * monitor.scale_factor()) as i32,
         anchor.map(|(ax, ay)| (ax as i32, ay as i32)),
         cfg!(target_os = "macos"),
     );
     set_bounds(window, x, y, size);
+}
+
+#[cfg(target_os = "windows")]
+fn without_taskbar(area: (i32, i32, i32, i32)) -> (i32, i32, i32, i32) {
+    #[repr(C)]
+    struct Rect { left: i32, top: i32, right: i32, bottom: i32 }
+    #[repr(C)]
+    struct AppBarData { size: u32, hwnd: isize, callback: u32, edge: u32, rc: Rect, lparam: isize }
+    #[link(name = "shell32")]
+    extern "system" {
+        fn SHAppBarMessage(message: u32, data: *mut AppBarData) -> usize;
+    }
+    const ABM_GETTASKBARPOS: u32 = 5;
+    let mut data = AppBarData {
+        size: std::mem::size_of::<AppBarData>() as u32,
+        hwnd: 0,
+        callback: 0,
+        edge: 0,
+        rc: Rect { left: 0, top: 0, right: 0, bottom: 0 },
+        lparam: 0,
+    };
+    if unsafe { SHAppBarMessage(ABM_GETTASKBARPOS, &mut data) } == 0 {
+        return area;
+    }
+    trim_taskbar(area, data.edge, (data.rc.left, data.rc.top, data.rc.right, data.rc.bottom))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn without_taskbar(area: (i32, i32, i32, i32)) -> (i32, i32, i32, i32) {
+    area
+}
+
+#[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
+fn trim_taskbar((x, y, w, h): (i32, i32, i32, i32), edge: u32, (l, t, r, b): (i32, i32, i32, i32)) -> (i32, i32, i32, i32) {
+    let (right, bottom) = (x + w, y + h);
+    let overlaps = l < right && r > x && t < bottom && b > y;
+    if !overlaps {
+        return (x, y, w, h);
+    }
+    match edge {
+        0 => (r.max(x), y, right - r.max(x), h),
+        1 => (x, b.max(y), w, bottom - b.max(y)),
+        2 => (x, y, l.min(right) - x, h),
+        _ => (x, y, w, t.min(bottom) - y),
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -342,7 +403,15 @@ fn set_bounds(window: &WebviewWindow, x: i32, y: i32, (w, h): (i32, i32)) {
 
 #[cfg(test)]
 mod tests {
-    use super::compute_position;
+    use super::{compute_position, trim_taskbar};
+
+    #[test]
+    fn auto_hidden_taskbar_is_kept_clear() {
+        assert_eq!(trim_taskbar((0, 0, 1920, 1080), 3, (0, 1032, 1920, 1080)), (0, 0, 1920, 1032));
+        assert_eq!(trim_taskbar((0, 0, 1920, 1080), 1, (0, 0, 1920, 48)), (0, 48, 1920, 1032));
+        assert_eq!(trim_taskbar((0, 0, 1920, 1080), 0, (0, 0, 60, 1080)), (60, 0, 1860, 1080));
+        assert_eq!(trim_taskbar((0, 0, 1920, 1032), 3, (0, 1032, 1920, 1080)), (0, 0, 1920, 1032));
+    }
 
     const AREA: (i32, i32, i32, i32) = (0, 0, 1920, 1080);
     const WIN: (i32, i32) = (425, 255);
@@ -397,6 +466,15 @@ mod tests {
         let mac = compute_position(AREA, WIN, M, None, true);
         assert_eq!(mac, (1920 - 425 - M, M));
     }
+}
+
+#[tauri::command]
+async fn panel_ready(window: WebviewWindow) -> Result<(), String> {
+    if !SHOW_WHEN_READY.swap(false, std::sync::atomic::Ordering::SeqCst) || window.is_visible().unwrap_or(false) {
+        return Ok(());
+    }
+    toggle_window(&window, None);
+    Ok(())
 }
 
 #[tauri::command]
@@ -509,33 +587,19 @@ fn main() {
 
             updater::start(app.handle().clone());
 
-            #[cfg(any(debug_assertions, target_os = "macos"))]
-            if let Some(w) = app.get_webview_window("main") {
-                toggle_window(&w, None);
-            }
+            SHOW_WHEN_READY.store(cfg!(any(debug_assertions, target_os = "macos")), std::sync::atomic::Ordering::SeqCst);
 
             if let Some(window) = app.get_webview_window("main") {
                 let w = window.clone();
-                window.on_window_event(move |event| {
-                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                window.on_window_event(move |event| match event {
+                    tauri::WindowEvent::CloseRequested { api, .. } => {
                         api.prevent_close();
                         let _ = w.hide();
                         sync_show_label(&w);
                     }
+                    tauri::WindowEvent::Focused(false) => hide_on_blur(&w),
+                    _ => {}
                 });
-            }
-
-            #[cfg(target_os = "macos")]
-            {
-                if let Some(window) = app.get_webview_window("main") {
-                    let w = window.clone();
-                    window.on_window_event(move |event| {
-                        if let tauri::WindowEvent::Focused(false) = event {
-                            let _ = w.hide();
-                            sync_show_label(&w);
-                        }
-                    });
-                }
             }
 
             Ok(())
@@ -557,6 +621,7 @@ fn main() {
             toggle_launch_at_login,
             quit_app,
             resize_window,
+            panel_ready,
             updater::get_update,
             updater::install_update,
         ])

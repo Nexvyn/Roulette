@@ -56,7 +56,7 @@ const glide = { type: "spring", duration: 0.3, bounce: 0 } as const;
 const swap = { type: "spring", duration: 0.35, bounce: 0 } as const;
 
 const MENU_H = 250;
-const SETTINGS_MIN = 280;
+const SETTINGS_MIN = 380;
 const EDGE = 6;
 
 export function I({ icon, size = 15, className = "", stroke = 1.6 }: { icon: IconSvgElement; size?: number; className?: string; stroke?: number }) {
@@ -107,9 +107,9 @@ function Tool({ label, onClick, icon, tone }: { label: string; onClick?: () => v
       <AnimatePresence mode="popLayout" initial={false}>
         <motion.span
           key={label}
-          initial={{ opacity: 0, scale: 0.3, filter: "blur(3px)" }}
-          animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
-          exit={{ opacity: 0, scale: 0.3, filter: "blur(3px)" }}
+          initial={{ opacity: 0, scale: 0.6 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.6 }}
           transition={swap}
           className="sp-tool-icon"
         >
@@ -167,9 +167,9 @@ function TunnelLine({ tunnel, copied, onCopy }: { tunnel: TunnelInfo | null; cop
             <AnimatePresence mode="wait" initial={false}>
               <motion.span
                 key={key}
-                initial={{ opacity: 0, y: 4, filter: "blur(2px)" }}
-                animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-                exit={{ opacity: 0, y: -4, filter: "blur(2px)", transition: exitT }}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4, transition: exitT }}
                 transition={{ duration: 0.2, ease }}
                 className="sp-tunnel-text"
               >
@@ -241,8 +241,8 @@ function Row({
     <motion.div
       layout="position"
       initial={{ opacity: 0, height: 0 }}
-      animate={{ opacity: terminating ? 0.45 : 1, height: "auto", x: terminating ? 8 : 0, filter: terminating ? "blur(1px)" : "blur(0px)" }}
-      exit={{ opacity: 0, height: 0, x: 16, filter: "blur(2px)", transition: { duration: 0.18, ease: easeInOut } }}
+      animate={{ opacity: terminating ? 0.45 : 1, height: "auto", x: terminating ? 8 : 0 }}
+      exit={{ opacity: 0, height: 0, x: 16, transition: { duration: 0.18, ease: easeInOut } }}
       transition={{ duration: 0.16, ease, layout: { duration: 0.28, ease: easeInOut } }}
       className="sp-row-wrap"
     >
@@ -421,9 +421,9 @@ function SettingsView({ settings, backend }: { settings: AppSettings; backend: B
   );
 }
 
-const viewIn = (dir: 1 | -1) => ({ opacity: 0, x: 12 * dir, filter: "blur(2px)" });
-const viewOut = (dir: 1 | -1) => ({ opacity: 0, x: 12 * dir, filter: "blur(2px)", transition: exitT });
-const viewShown = { opacity: 1, x: 0, filter: "blur(0px)" };
+const viewIn = (dir: 1 | -1) => ({ opacity: 0, x: 8 * dir });
+const viewOut = (dir: 1 | -1) => ({ opacity: 0, x: 8 * dir, transition: { duration: 0.1, ease: [0.55, 0, 1, 0.45] as const } });
+const viewShown = { opacity: 1, x: 0, transition: { duration: 0.2, ease, delay: 0.05 } };
 
 function StateCard({ icon, title, text, action }: { icon: React.ReactNode; title: string; text?: string; action?: React.ReactNode }) {
   return (
@@ -804,9 +804,9 @@ export function Panel({
             <AnimatePresence mode="wait" initial={false}>
               <motion.span
                 key={note ?? (view === "settings" ? "settings" : "count")}
-                initial={{ opacity: 0, y: 3, filter: "blur(2px)" }}
-                animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-                exit={{ opacity: 0, y: -3, filter: "blur(2px)", transition: exitT }}
+                initial={{ opacity: 0, y: 3 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -3, transition: exitT }}
                 transition={{ duration: 0.18, ease }}
                 className={`sp-brand-count ${note ? "is-note" : ""}`}
                 role={note ? "status" : undefined}

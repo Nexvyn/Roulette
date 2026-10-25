@@ -31,6 +31,23 @@ export function App() {
   const resize = useCallback((h: number) => void invoke("resize_window", { height: h }).catch(() => undefined), []);
   const atBottom = useWindowFit(panelRef, settings?.hasCompletedOnboarding ? resize : null, [resize, settings?.hasCompletedOnboarding]);
 
+  const readySent = useRef(false);
+  const loaded = settings !== null && (!state.isScanning || state.entries.length > 0);
+  useEffect(() => {
+    if (readySent.current || settings === null) return;
+    const send = () => {
+      if (readySent.current) return;
+      readySent.current = true;
+      void invoke("panel_ready").catch(() => undefined);
+    };
+    if (loaded) {
+      const frame = requestAnimationFrame(() => requestAnimationFrame(send));
+      return () => cancelAnimationFrame(frame);
+    }
+    const fallback = setTimeout(send, 1500);
+    return () => clearTimeout(fallback);
+  }, [loaded, settings]);
+
   const backend = useMemo<Backend>(() => {
     const patch = (p: Partial<AppSettings>) => invoke<AppSettings>("update_settings", { patch: p }).then(setSettings).catch(console.error);
     return {

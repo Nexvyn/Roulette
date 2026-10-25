@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
    the macOS menu bar), so both resizes happen in transparent space and never move the panel. */
 
 const MIN = 80;
+const MIN_OPEN = 430;
 const MAX = 600;
 const HEADROOM = 180; // enough for the settings view or a couple of new rows in one step
 const SETTLE_MS = 400; // longer than any panel animation
@@ -56,26 +57,29 @@ export function useWindowFit(
     };
     const report = () => {
       setAtBottom(anchoredToBottom());
-      const h = Math.max(MIN, Math.min(naturalHeight(el), MAX));
-      if (h > windowH) send(Math.min(MAX, h + HEADROOM));
-      clearTimeout(settle);
-      // On macOS the window keeps its size while it is open, so closing a server never resizes the
-      // window under the user; it is fitted again once it has been hidden.
-      if (MAC) return;
-      settle = setTimeout(() => {
-        if (windowH !== h) send(h);
-        setAtBottom(anchoredToBottom());
-      }, SETTLE_MS);
+      const h = Math.max(MAC ? MIN : MIN_OPEN, Math.min(naturalHeight(el), MAX));
+      const open = MAC || document.hasFocus();
+      if (h > windowH) send(open ? Math.min(MAX, h + HEADROOM) : h);
+      else if (!open && h !== windowH) send(h);
     };
     const fitWhileHidden = () => {
-      if (!MAC || document.visibilityState !== "hidden") return;
-      const h = Math.max(MIN, Math.min(naturalHeight(el), MAX));
-      if (windowH !== h) send(h);
+      clearTimeout(settle);
+      settle = setTimeout(() => {
+        if (MAC ? document.visibilityState !== "hidden" : document.hasFocus()) return;
+        const h = Math.max(MAC ? MIN : MIN_OPEN, Math.min(naturalHeight(el), MAX));
+        if (windowH !== h) send(h);
+        setAtBottom(anchoredToBottom());
+      }, MAC ? 0 : SETTLE_MS);
+    };
+    const resized = () => {
+      windowH = Math.round(window.innerHeight);
+      report();
     };
     report();
     const ro = new ResizeObserver(report);
     ro.observe(el);
     const recheck = () => setAtBottom(anchoredToBottom());
+    window.addEventListener("resize", resized);
     window.addEventListener("focus", recheck);
     window.addEventListener("blur", fitWhileHidden);
     document.addEventListener("visibilitychange", recheck);
@@ -83,6 +87,7 @@ export function useWindowFit(
     return () => {
       ro.disconnect();
       clearTimeout(settle);
+      window.removeEventListener("resize", resized);
       window.removeEventListener("focus", recheck);
       window.removeEventListener("blur", fitWhileHidden);
       document.removeEventListener("visibilitychange", recheck);
