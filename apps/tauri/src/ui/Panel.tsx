@@ -46,7 +46,7 @@ export interface Backend {
 
 export const IS_MAC = /Mac/i.test(navigator.userAgent);
 const APP_NAME = "Roulette";
-const APP_VERSION = "0.1.0";
+const APP_VERSION = "0.1.1";
 
 const ease = [0.23, 1, 0.32, 1] as const;
 const easeInOut = [0.645, 0.045, 0.355, 1] as const;

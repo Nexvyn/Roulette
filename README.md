@@ -34,11 +34,16 @@ but it gets no new features or releases.
 - Finds running dev servers on macOS (`lsof`), Windows (`netstat`) and Linux (`ss`)
 - Shows the project folder, git branch, port and uptime, with the framework's logo on each row
 - Open in the browser, kill one server or all of them, copy the URL or port
-- Rename and pin servers; both are kept across restarts
+- Picks up Docker containers that publish a port, showing the container name, image and compose project. Stop runs `docker stop` on that container only, and Kill all leaves containers running
+- Rename and pin servers; both are kept across restarts. A name belongs to its port and project, so another project on the same port starts with its own name
 - Share any server through a Cloudflare Quick Tunnel: a public `trycloudflare.com` link, no account needed (uses your own `cloudflared`)
+  - Links can expire on their own after 1 or 4 hours (Settings), and the row shows the time left
+  - Stop Sharing ends the link at once and leaves the server running. Every share gets a new random address
 - Search with `/`, move with the arrow keys, open with `Enter`, kill with `Backspace`
-- Settings: launch at login, sort order, rescan interval, diagnostics
+- Settings: launch at login, sort order, rescan interval, link expiry, diagnostics
+- Updates itself: when a new version is out, the panel offers **Restart to update** (on Linux this works for the AppImage; `.deb` and `.rpm` installs get a download link)
 - Follows the system light or dark theme
+- The panel opens next to the tray icon and closes when you click outside it
 - On macOS it stays in the menu bar only, with no Dock icon
 
 ## Development
@@ -92,7 +97,26 @@ git push origin v0.1.0
 ```
 
 You can also start it by hand from the repository's **Actions** tab. Check the draft release,
-then publish it.
+then publish it. Before tagging, bump the version in `apps/tauri/package.json`,
+`apps/tauri/src-tauri/tauri.conf.json` and `apps/tauri/src-tauri/Cargo.toml`.
+
+### Updates
+
+Installed copies check `latest.json` on the newest published release, 20 seconds after launch
+and then once a day. Updates are signed, so the workflow needs the signing key once:
+
+```bash
+cd apps/tauri
+pnpm tauri signer generate -w ~/.tauri/roulette.key
+gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/roulette.key
+gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+```
+
+Put the public key (`~/.tauri/roulette.key.pub`) in `plugins.updater.pubkey` in `tauri.conf.json`,
+and keep the private key safe: without it, installed copies can't be updated again. With the
+secret set, the workflow signs every build and adds `latest.json` to the release; without it,
+releases still build, just without updates. An update reaches people once its release is
+published, not while it is a draft.
 
 ## License
 

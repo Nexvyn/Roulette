@@ -5,10 +5,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
-## [Unreleased]
+## [0.1.1] - 2026-10-25
 
 ### Added
 
+- Docker containers that publish a port show their container name, image and compose project. Stop runs `docker stop` on that container only, and Kill all leaves containers running
+- Shared links can expire on their own after 1 or 4 hours (Settings), and the row shows the time left
+- Roulette updates itself: when a new version is out, the panel offers Restart to update. On Linux this works for the AppImage; `.deb` and `.rpm` installs get a download link
 - Share a server through a Cloudflare Quick Tunnel: a public `trycloudflare.com` link on the row, no account needed. The link only shows once it resolves, and it closes when you stop sharing, kill the server or quit.
 - A dialog with the install command for your system when `cloudflared` isn't installed
 - The framework's logo on each row (Next.js, Vite, Django, Node.js, Storybook and more), from `runeicons-brands`
@@ -20,6 +23,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Changed
 
+- A rename belongs to its port and project, so another project started on the same port gets its own name
+- Smoother animations: no blur effects, and the list and Settings swap with a short fade
 - Renamed from Ports to **Roulette**
 - New panel design, shared by the Electron and Tauri apps
 - New app icon: the six-petal mark in black on a white tile
@@ -29,6 +34,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Fixed
 
+- Windows: the panel closes when you click outside it
+- Windows: no accent-coloured border around the panel
+- Windows: the panel opens above an auto-hidden taskbar instead of on top of it
+- The panel opens once at its final size and place, without jumping at start
+- Windows: opening Settings no longer makes the panel jump; the window only resizes while it is hidden
+- Settings shows all its options without scrolling, and the header is never cut off
+- Linux: containers whose port is held by a root-owned `docker-proxy` are found
 - The window now grows back when more servers appear
 - Tauri: the tray icon no longer shows twice, and left-click toggles the panel (the menu is on right-click)
 - Tauri: the tray menu matches the Electron app
