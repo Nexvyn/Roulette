@@ -1,27 +1,27 @@
 # Roulette - Tauri
 
-The lightweight build of Roulette. Built with Tauri 2, Rust, React, and TypeScript.
+The Roulette app. Built with Tauri 2, Rust, React, and TypeScript. This is the version that's built, released and maintained; the Electron app in `apps/electron` was the first version and is kept only for reference.
 
 **Why Tauri?** The Electron build works great but ships at ~150 MB. The Tauri build uses a native Rust backend and the OS webview instead of bundling Chromium, bringing the installer down to ~5–10 MB. Same features, fraction of the size.
 
 ## Run (requires Rust toolchain)
 
 ```bash
-npm install
-npm run dev          # frontend only (Vite)
-cargo tauri dev      # full app with Rust backend
+pnpm install
+pnpm dev          # frontend only (Vite)
+pnpm tauri dev    # full app with the Rust backend
 ```
 
 ## Build
 
 ```bash
-cargo tauri build    # produces installer in src-tauri/target/release/bundle/
+pnpm tauri build  # produces installers in src-tauri/target/release/bundle/
 ```
 
 ## Typecheck (frontend)
 
 ```bash
-npx tsc --noEmit
+pnpm exec tsc --noEmit
 ```
 
 ## Structure

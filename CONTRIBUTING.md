@@ -4,42 +4,46 @@ Thank you for your interest in contributing to Roulette!
 
 ## Getting Started
 
-### Electron app
-
-```bash
-cd apps/electron
-npm install
-npm run dev
-```
+Every app uses **pnpm**.
 
 ### Tauri app (requires the Rust toolchain)
 
+This is the Roulette app that's released and maintained.
+
 ```bash
 cd apps/tauri
-npm install
-cargo tauri dev
+pnpm install
+pnpm tauri dev
+```
+
+### Electron app (first version, not maintained)
+
+Kept for reference only. New features and fixes go into the Tauri app.
+
+```bash
+cd apps/electron
+pnpm install
+pnpm dev
 ```
 
 ### Website
 
 ```bash
 cd apps/website
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 Sharing a server needs Cloudflare's `cloudflared` on your machine (`brew install cloudflared`, `winget install --id Cloudflare.cloudflared`, or the Linux package).
 
 ## Development Guidelines
 
-- The Electron and Tauri apps must stay feature-identical. Change both together.
-- `ui/Panel.tsx` and `ui/panel.css` are the same file in both apps (`apps/electron/src/renderer/src/ui/` and `apps/tauri/src/ui/`). Edit one, copy it over the other.
-- Keep `PortEntry`, `AppSettings` and `ScanState` field names identical across `apps/electron/src/shared/contracts.ts`, `apps/tauri/src/ui/types.ts` and the Rust serde structs.
+- New work goes into the Tauri app. The Electron app is no longer maintained, so it doesn't need matching changes.
+- Keep `PortEntry`, `AppSettings` and `ScanState` field names identical between `apps/tauri/src/ui/types.ts` and the Rust serde structs.
 - Before opening a PR:
-  - `npm run typecheck` in `apps/electron/`
-  - `npx tsc --noEmit` in `apps/tauri/`
+  - `pnpm exec tsc --noEmit` in `apps/tauri/`
   - `cargo check` and `cargo test` in `apps/tauri/src-tauri/`
-  - `npx tsc --noEmit` in `apps/website/` if you touched the site
+  - `pnpm exec tsc --noEmit` in `apps/website/` if you touched the site
 
 ## Pull Requests
 

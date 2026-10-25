@@ -1,28 +1,30 @@
 # Roulette - Electron
 
-The primary desktop build of Roulette. Built with Electron, React, and TypeScript.
+The first version of Roulette, and the first desktop app I built. Built with Electron, React, and TypeScript.
+
+> **Not maintained.** This app is kept for reference and is no longer built or released. Electron bundles Chromium, so the installer came out at around 150 MB; Roulette was rebuilt in Tauri (`apps/tauri`), which is the app that's released and maintained now. See the main [README](../../README.md).
 
 Electron was chosen first because it ships fast - no extra toolchain needed, and it produces a working Windows installer out of the box.
 
 ## Run
 
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 ## Build
 
 ```bash
-npm run dist:win   # Windows installer → dist/
-npm run dist:mac   # macOS DMG
-npm run dist:linux # Linux AppImage
+pnpm dist:win   # Windows installer → dist/
+pnpm dist:mac   # macOS DMG
+pnpm dist:linux # Linux AppImage
 ```
 
 ## Typecheck
 
 ```bash
-npm run typecheck
+pnpm typecheck
 ```
 
 ## Structure

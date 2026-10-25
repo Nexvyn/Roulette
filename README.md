@@ -7,15 +7,27 @@ development server running on your machine. Each one shows its project, git
 branch, port and uptime, and you can open it, kill it, rename it, pin it or
 share it with a public link, without opening a terminal.
 
+**Website:** [roulette.nexvyn.dev](https://roulette.nexvyn.dev)
+
 ## Apps
 
-| App | Stack | Location |
-|-----|-------|----------|
-| Electron | Electron + React + TypeScript | `apps/electron/` |
-| Tauri | Tauri 2 + Rust + React + TypeScript | `apps/tauri/` |
-| Website | Next.js + React + Tailwind CSS | `apps/website/` |
+| App | Stack | Location | Status |
+|-----|-------|----------|--------|
+| **Tauri** | Tauri 2 + Rust + React + TypeScript | `apps/tauri/` | **The Roulette app.** Built, released and maintained. |
+| Electron | Electron + React + TypeScript | `apps/electron/` | The first version. Kept for reference, not built or released. |
+| Website | Next.js + React + Tailwind CSS | `apps/website/` | [roulette.nexvyn.dev](https://roulette.nexvyn.dev) |
 
-The Electron and Tauri apps have the same features and share the same panel UI.
+### Why there are two apps
+
+Roulette started as an Electron app, the first desktop app I built. Electron
+bundles a whole copy of Chromium, so its installer came out at around 150 MB.
+I rebuilt the app in Tauri, which uses the system's own webview and a Rust
+backend, and the installer dropped to a few megabytes with the same features.
+
+From here on, **only the Tauri app is built, released and maintained**.
+Downloads on the website and on GitHub Releases are Tauri builds. The Electron
+app stays in `apps/electron/` as it was, so you can see where Roulette started,
+but it gets no new features or releases.
 
 ## Features
 
@@ -31,36 +43,42 @@ The Electron and Tauri apps have the same features and share the same panel UI.
 
 ## Development
 
-### Electron
-
-```bash
-cd apps/electron
-npm install
-npm run dev
-```
+Every app uses **pnpm**.
 
 ### Tauri (requires the Rust toolchain)
 
 ```bash
 cd apps/tauri
-npm install
-cargo tauri dev
+pnpm install
+pnpm tauri dev
 ```
 
 ### Website
 
 ```bash
 cd apps/website
-npm install
-npm run dev
+pnpm install
+pnpm dev
+```
+
+### Electron (first version, not maintained)
+
+```bash
+cd apps/electron
+pnpm install
+pnpm dev
 ```
 
 ## Building
 
-- **Electron:** `npm run dist:win`, `npm run dist:mac` or `npm run dist:linux` in `apps/electron`. Installers land in `apps/electron/dist/`.
-- **Tauri:** `cargo tauri build` in `apps/tauri`. Installers land in `apps/tauri/src-tauri/target/release/bundle/`.
+Only the Tauri app is built for release:
 
-A macOS build has to be made on a Mac.
+```bash
+cd apps/tauri
+pnpm tauri build
+```
+
+Installers land in `apps/tauri/src-tauri/target/release/bundle/`. A macOS build has to be made on a Mac.
 
 ## License
 
