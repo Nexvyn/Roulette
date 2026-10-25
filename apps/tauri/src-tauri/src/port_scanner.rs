@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 use tokio::process::Command;
 
+use crate::docker::{self, ContainerInfo};
+
 const MIN_PORT: u16 = 1024;
 const MAX_PORT: u16 = 49151;
 
@@ -43,6 +45,13 @@ pub struct PortEntry {
     pub status: String,
     pub pinned: bool,
     pub tunnel: Option<crate::tunnel::TunnelInfo>,
+    pub container: Option<ContainerInfo>,
+}
+
+impl PortEntry {
+    pub fn is_docker(&self) -> bool {
+        self.container.is_some() || is_docker_process(&self.process_name)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -117,11 +126,14 @@ async fn build_entries(parsed: Vec<ParsedPort>) -> Vec<PortEntry> {
     sorted.sort_by_key(|p| p.port);
 
     let win_map = if cfg!(target_os = "windows") { Some(get_windows_process_map().await) } else { None };
+    let mut containers: Option<Option<HashMap<u16, ContainerInfo>>> = None;
 
     let mut result = Vec::new();
     for info in sorted {
         let (process_name, cwd, start_time, uptime_seconds): (String, Option<String>, Option<String>, Option<u64>) =
-            if let Some(ref map) = win_map {
+            if info.pid == 0 {
+                ("docker-proxy".into(), None, None, None)
+            } else if let Some(ref map) = win_map {
                 match map.get(&info.pid) {
                     Some(p) => {
                         let pname = derive_windows_name(p.name.trim_end_matches(".exe"), &p.command_line);
@@ -142,7 +154,18 @@ async fn build_entries(parsed: Vec<ParsedPort>) -> Vec<PortEntry> {
             continue;
         }
 
-        let docker = is_docker_process(&process_name);
+        let docker = info.pid == 0 || is_docker_process(&process_name);
+        let container = if docker {
+            if containers.is_none() {
+                containers = Some(docker::containers_by_port().await);
+            }
+            containers.as_ref().and_then(|m| m.as_ref()).and_then(|m| m.get(&info.port)).cloned()
+        } else {
+            None
+        };
+        if info.pid == 0 && container.is_none() {
+            continue;
+        }
         if !docker {
             if let Some(ref c) = cwd {
                 if is_blocked_path(c) { continue; }
@@ -168,7 +191,14 @@ async fn build_entries(parsed: Vec<ParsedPort>) -> Vec<PortEntry> {
             Some(r) => resolve_git_branch(r).await,
             None => String::new(),
         };
-        let project_name = get_project_name(&process_name, &cwd, &git_root);
+        let project_name = match &container {
+            Some(c) => c.name.clone(),
+            None => get_project_name(&process_name, &cwd, &git_root),
+        };
+        let (start_time, uptime_seconds) = match &container {
+            Some(c) => (None, c.started_unix.map(|t| ((now_ms() / 1000) - t).max(0) as u64)),
+            None => (start_time, uptime_seconds),
+        };
 
         result.push(PortEntry {
             id: format!("{}-{}", info.port, info.pid),
@@ -186,6 +216,7 @@ async fn build_entries(parsed: Vec<ParsedPort>) -> Vec<PortEntry> {
             status: "running".into(),
             pinned: false,
             tunnel: None,
+            container,
         });
     }
     result
@@ -200,7 +231,7 @@ struct WinProc {
 
 fn is_docker_process(name: &str) -> bool {
     let n = name.to_lowercase();
-    n.starts_with("com.docker") || ["docker", "dockerd", "vpnkit", "vpnkit-bridge", "wslrelay"].contains(&n.as_str())
+    n.starts_with("com.docker") || ["docker", "dockerd", "docker-proxy", "vpnkit", "vpnkit-bridge", "wslrelay"].contains(&n.as_str())
 }
 
 fn now_ms() -> i64 {
@@ -528,7 +559,7 @@ fn parse_linux_ss(output: &str) -> Vec<ParsedPort> {
         let port: u16 = match cols.get(3).and_then(|a| a.rsplit(':').next()).and_then(|s| s.parse().ok()) {
             Some(p) if p >= MIN_PORT && p <= MAX_PORT => p, _ => continue,
         };
-        let (name, pid) = match extract_ss_process(line) { Some(v) => v, None => continue };
+        let (name, pid) = extract_ss_process(line).unwrap_or_default();
         if seen.insert(port) { result.push(ParsedPort { pid, port, process_name: name }); }
     }
     result
@@ -543,10 +574,10 @@ fn parse_linux_netstat(output: &str) -> Vec<ParsedPort> {
         let port: u16 = match cols.get(3).and_then(|a| a.rsplit(':').next()).and_then(|s| s.parse().ok()) {
             Some(p) if p >= MIN_PORT && p <= MAX_PORT => p, _ => continue,
         };
-        let (name, pid) = match cols.get(6).and_then(|s| {
+        let (name, pid) = cols.get(6).and_then(|s| {
             let parts: Vec<&str> = s.splitn(2, '/').collect();
             if parts.len() == 2 { Some((parts[1].to_string(), parts[0].parse::<u32>().ok()?)) } else { None }
-        }) { Some(v) => v, None => continue };
+        }).unwrap_or_default();
         if seen.insert(port) { result.push(ParsedPort { pid, port, process_name: name }); }
     }
     result
@@ -562,4 +593,28 @@ fn extract_ss_process(line: &str) -> Option<(String, u32)> {
     let pid_end = pid_str.find(|c: char| !c.is_ascii_digit()).unwrap_or(pid_str.len());
     let pid: u32 = pid_str[..pid_end].parse().ok()?;
     Some((name, pid))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn keeps_sockets_without_a_visible_owner() {
+        let out = "State  Recv-Q Send-Q Local Address:Port Peer Address:Port Process\n\
+                   LISTEN 0      4096   0.0.0.0:5432       0.0.0.0:*\n\
+                   LISTEN 0      511    127.0.0.1:5173     0.0.0.0:*    users:((\"node\",pid=4242,fd=23))\n";
+        let parsed = parse_linux_ss(out);
+        assert_eq!(parsed.len(), 2);
+        assert_eq!((parsed[0].port, parsed[0].pid), (5432, 0));
+        assert_eq!((parsed[1].port, parsed[1].pid, parsed[1].process_name.as_str()), (5173, 4242, "node"));
+    }
+
+    #[test]
+    fn knows_docker_proxies() {
+        assert!(is_docker_process("com.docker.backend"));
+        assert!(is_docker_process("docker-proxy"));
+        assert!(is_docker_process("wslrelay"));
+        assert!(!is_docker_process("node"));
+    }
 }

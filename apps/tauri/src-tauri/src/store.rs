@@ -75,6 +75,13 @@ impl AppStore {
     }
 
     pub async fn kill_port(&mut self, port: u16, pid: u32) {
+        let target = self.state.entries.iter().find(|e| e.port == port);
+        let container = target.and_then(|e| e.container.as_ref()).map(|c| c.id.clone());
+        if container.is_none() && target.is_some_and(|e| e.is_docker()) {
+            self.state.last_error = Some(format!("Port {port} is held by Docker itself, not a container Roulette can see. Stop it from Docker."));
+            return;
+        }
+
         self.recently_killed.insert(port, std::time::Instant::now());
         self.end_tunnel(port);
 
@@ -82,7 +89,11 @@ impl AppStore {
             if entry.port == port { entry.status = "terminating".into(); }
         }
 
-        if let Err(e) = terminate_process(pid).await {
+        let result = match &container {
+            Some(id) => crate::docker::stop(id).await,
+            None => terminate_process(pid).await,
+        };
+        if let Err(e) = result {
             self.recently_killed.remove(&port);
             for entry in &mut self.state.entries {
                 if entry.port == port { entry.status = "error".into(); }
@@ -95,7 +106,7 @@ impl AppStore {
     }
 
     pub async fn kill_all(&mut self) {
-        let ports: Vec<(u16, u32)> = self.state.entries.iter().map(|e| (e.port, e.pid)).collect();
+        let ports: Vec<(u16, u32)> = self.state.entries.iter().filter(|e| !e.is_docker()).map(|e| (e.port, e.pid)).collect();
         for (port, pid) in ports {
             self.kill_port(port, pid).await;
         }

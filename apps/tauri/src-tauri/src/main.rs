@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod docker;
 mod port_scanner;
 mod settings;
 mod store;

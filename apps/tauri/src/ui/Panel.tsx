@@ -7,6 +7,7 @@ import {
   Cancel01Icon,
   CancelCircleIcon,
   CheckmarkCircle02Icon,
+  ContainerIcon,
   Copy01Icon,
   GitBranchIcon,
   Globe02Icon,
@@ -128,6 +129,8 @@ function formatUptime(seconds: number | null) {
   return `${Math.floor(h / 24)}d ${h % 24}h`;
 }
 
+const isDocker = (e: PortEntry) => e.container !== null || /^(com\.docker.*|docker|dockerd|docker-proxy|vpnkit|vpnkit-bridge|wslrelay)$/i.test(e.processName);
+
 function RuntimeTile({ entry }: { entry: PortEntry }) {
   const rt = runtimeFor(entry.processName);
   return (
@@ -199,6 +202,7 @@ function Row({
   onEdit,
   onRename,
   onCopyLink,
+  onKill,
   backend,
 }: {
   entry: PortEntry;
@@ -211,6 +215,7 @@ function Row({
   onEdit: (on: boolean) => void;
   onRename: (value: string) => void;
   onCopyLink: () => void;
+  onKill: () => void;
   backend: Backend;
 }) {
   const tunnel = entry.tunnel;
@@ -264,7 +269,12 @@ function Row({
             )}
             {entry.pinned && !editing ? <I icon={StarIcon} size={11} stroke={2} className="sp-pin-star is-filled" /> : null}
           </div>
-          {entry.branch ? (
+          {entry.container ? (
+            <div className="sp-row-sub" title={`Container ${entry.container.id}`}>
+              <I icon={ContainerIcon} size={11} />
+              <span className="sp-truncate">{entry.container.project ? `${entry.container.project} · ${entry.container.image}` : entry.container.image}</span>
+            </div>
+          ) : entry.branch ? (
             <div className="sp-row-sub">
               <I icon={GitBranchIcon} size={11} />
               <span className="sp-truncate">{entry.branch}</span>
@@ -296,7 +306,7 @@ function Row({
               tone={sharing ? "cloud-on" : "cloud"}
             />
             <Tool label={`Open localhost:${entry.port}  ↵`} onClick={() => backend.open(entry.port)} icon={ArrowUpRight01Icon} />
-            <Tool label="Kill  ⌫" onClick={() => backend.kill(entry.port, entry.pid)} icon={CancelCircleIcon} tone="danger" />
+            <Tool label={entry.container ? "Stop container  ⌫" : "Kill  ⌫"} onClick={onKill} icon={CancelCircleIcon} tone="danger" />
           </motion.div>
         </div>
       </div>
@@ -338,7 +348,7 @@ function Menu({ entry, up, maxHeight, onPick }: { entry: PortEntry; up: boolean;
         {sep("c")}
         {item("open", ArrowUpRight01Icon, "Open in Browser", "↵")}
         {sep("d")}
-        {item("kill", CancelCircleIcon, "Kill Server", "⌫", true)}
+        {item("kill", CancelCircleIcon, entry.container ? "Stop Container" : "Kill Server", "⌫", true)}
       </Squircle>
     </motion.div>
   );
@@ -515,6 +525,10 @@ export function Panel({
     clearTimeout(noteTimer.current);
     noteTimer.current = setTimeout(() => setNote(null), 1600);
   };
+  const kill = (entry: PortEntry) => {
+    if (isDocker(entry) && !entry.container) say("Held by Docker itself");
+    else backend.kill(entry.port, entry.pid);
+  };
   const copy = (text: string, label = text) => {
     backend.copy(text);
     say(`Copied ${label}`);
@@ -549,7 +563,11 @@ export function Panel({
     const q = query.trim().toLowerCase();
     const list = q
       ? state.entries.filter(
-          (e) => e.projectName.toLowerCase().includes(q) || String(e.port).includes(q) || e.branch.toLowerCase().includes(q)
+          (e) =>
+            e.projectName.toLowerCase().includes(q) ||
+            String(e.port).includes(q) ||
+            e.branch.toLowerCase().includes(q) ||
+            (e.container?.image.toLowerCase().includes(q) ?? false)
         )
       : state.entries;
     const by: Record<SortOption, (a: PortEntry, b: PortEntry) => number> = {
@@ -595,7 +613,7 @@ export function Panel({
       } else if ((e.key === "Backspace" || e.key === "Delete") && cur !== null && !typing) {
         e.preventDefault();
         const entry = list.find((s) => s.port === cur);
-        if (entry) backend.kill(entry.port, entry.pid);
+        if (entry) kill(entry);
       } else if (e.key === "/" && !typing) {
         e.preventDefault();
         search.current?.focus();
@@ -683,7 +701,7 @@ export function Panel({
     if (a === "unshare") backend.stopTunnel(entry.port);
     if (a === "public") copyLink(entry);
     if (a === "open") backend.open(entry.port);
-    if (a === "kill") backend.kill(entry.port, entry.pid);
+    if (a === "kill") kill(entry);
   };
 
   /* Swapping between the list and the settings: the body's height eases from one view to the other
@@ -735,6 +753,7 @@ export function Panel({
       onEdit={(on) => setEditing(on ? entry.port : null)}
       onRename={(v) => rename(entry.port, v)}
       onCopyLink={() => copyLink(entry)}
+      onKill={() => kill(entry)}
     />
   );
 
@@ -753,6 +772,8 @@ export function Panel({
   const error = apiError ?? (state.lastError && state.entries.length === 0 ? state.lastError : null);
   const selected = ordered.find((e) => e.port === sel) ?? ordered[0] ?? null;
   const shared = state.entries.filter((e) => e.tunnel?.status === "live").length;
+  const killable = state.entries.filter((e) => !isDocker(e)).length;
+  const dockerRows = state.entries.length - killable;
 
   return (
     <div
@@ -783,7 +804,7 @@ export function Panel({
         </div>
         <div className="sp-header-actions">
           <AnimatePresence initial={false}>
-            {state.entries.length > 0 && view === "list" ? (
+            {killable > 0 && view === "list" ? (
               <motion.button
                 key="killall"
                 type="button"
@@ -793,7 +814,7 @@ export function Panel({
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0, transition: exitT }}
                 transition={{ duration: 0.15, ease }}
-                title={`Kill all ${state.entries.length} running servers`}
+                title={dockerRows ? `Kill all ${killable} running servers. Docker containers keep running.` : `Kill all ${killable} running servers`}
               >
                 <I icon={CancelCircleIcon} size={13} />
                 Kill all
@@ -916,7 +937,7 @@ export function Panel({
                 <div className="sp-diag-line">
                   <span>process</span>
                   <span className="sp-truncate">
-                    {selected.processName} · pid {selected.pid}
+                    {selected.container ? `container ${selected.container.id.slice(0, 12)} · ${selected.container.image}` : `${selected.processName} · pid ${selected.pid}`}
                   </span>
                 </div>
                 <div className="sp-diag-line">

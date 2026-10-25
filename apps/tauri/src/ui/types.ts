@@ -6,6 +6,13 @@ export interface TunnelInfo {
   error: string | null;
 }
 
+export interface ContainerInfo {
+  id: string;
+  name: string;
+  image: string;
+  project: string | null;
+}
+
 export interface PortEntry {
   id: string;
   port: number;
@@ -22,6 +29,7 @@ export interface PortEntry {
   status: string;
   pinned: boolean;
   tunnel: TunnelInfo | null;
+  container: ContainerInfo | null;
 }
 
 export interface ScanDiagnostics {
