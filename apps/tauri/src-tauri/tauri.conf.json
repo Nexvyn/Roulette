@@ -2,12 +2,12 @@
   "$schema": "https://raw.githubusercontent.com/nicedoc/tauri/v2/tooling/cli/schema.json",
   "productName": "Roulette",
   "version": "0.1.0",
-  "identifier": "com.ports.app",
+  "identifier": "com.nexvyn.roulette",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build"
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build"
   },
   "app": {
     "withGlobalTauri": true,
@@ -32,6 +32,7 @@
   },
   "bundle": {
     "active": true,
+    "homepage": "https://roulette.nexvyn.dev",
     "targets": "all",
     "icon": [
       "icons/32x32.png",

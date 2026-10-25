@@ -46,7 +46,16 @@ impl Default for StoredData {
 
 fn config_path() -> PathBuf {
     let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-    base.join("Ports").join("settings.json")
+    let path = base.join("Roulette").join("settings.json");
+    // The app was called Ports; carry its settings over once.
+    let old = base.join("Ports").join("settings.json");
+    if !path.exists() && old.exists() {
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let _ = fs::copy(&old, &path);
+    }
+    path
 }
 
 fn load() -> StoredData {

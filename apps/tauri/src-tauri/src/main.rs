@@ -156,7 +156,7 @@ fn apply_autostart(enabled: bool) -> std::io::Result<()> {
 #[cfg(target_os = "macos")]
 fn apply_autostart(enabled: bool) -> std::io::Result<()> {
     let dir = dirs::home_dir().unwrap_or_default().join("Library/LaunchAgents");
-    let file = dir.join("com.ports.app.plist");
+    let file = dir.join("com.nexvyn.roulette.plist");
     if enabled {
         let exe = std::env::current_exe()?.to_string_lossy().into_owned();
         std::fs::create_dir_all(&dir)?;
@@ -165,7 +165,7 @@ fn apply_autostart(enabled: bool) -> std::io::Result<()> {
             format!(
                 "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
 <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
-<plist version=\"1.0\"><dict><key>Label</key><string>com.ports.app</string><key>ProgramArguments</key><array><string>{exe}</string><string>--hidden</string></array><key>RunAtLoad</key><true/></dict></plist>
+<plist version=\"1.0\"><dict><key>Label</key><string>com.nexvyn.roulette</string><key>ProgramArguments</key><array><string>{exe}</string><string>--hidden</string></array><key>RunAtLoad</key><true/></dict></plist>
 "
             ),
         )
@@ -179,7 +179,7 @@ fn apply_autostart(enabled: bool) -> std::io::Result<()> {
 #[cfg(target_os = "linux")]
 fn apply_autostart(enabled: bool) -> std::io::Result<()> {
     let dir = dirs::config_dir().unwrap_or_default().join("autostart");
-    let file = dir.join("ports.desktop");
+    let file = dir.join("roulette.desktop");
     if enabled {
         let exe = std::env::current_exe()?.to_string_lossy().into_owned();
         std::fs::create_dir_all(&dir)?;
