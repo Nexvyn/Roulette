@@ -8,13 +8,8 @@ const rootDir = dirname(fileURLToPath(import.meta.url));
 export default defineConfig({
   main: {
     build: {
-      minify: "esbuild",
       reportCompressedSize: false,
       target: "node20"
-    },
-    esbuild: {
-      drop: ["console", "debugger"],
-      legalComments: "none"
     },
     plugins: [externalizeDepsPlugin()],
     resolve: {
@@ -25,13 +20,8 @@ export default defineConfig({
   },
   preload: {
     build: {
-      minify: "esbuild",
       reportCompressedSize: false,
       target: "node20"
-    },
-    esbuild: {
-      drop: ["console", "debugger"],
-      legalComments: "none"
     },
     plugins: [externalizeDepsPlugin()],
     resolve: {
@@ -42,13 +32,8 @@ export default defineConfig({
   },
   renderer: {
     build: {
-      minify: "esbuild",
       reportCompressedSize: false,
       target: "chrome128"
-    },
-    esbuild: {
-      drop: ["console", "debugger"],
-      legalComments: "none"
     },
     resolve: {
       alias: {

@@ -1,6 +1,11 @@
 {
   "name": "roulette",
   "version": "0.1.0",
+  "homepage": "https://roulette.nexvyn.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Nexvyn/Roulette"
+  },
   "private": true,
   "description": "Menu-bar app that lists every local dev server, with one-click stop, open and public share links.",
   "main": "out/main/index.js",
@@ -13,10 +18,11 @@
     "dist:win": "node scripts/dist.mjs --win",
     "dist:linux": "node scripts/dist.mjs --linux",
     "preview": "electron-vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "postinstall": "node node_modules/electron/install.js"
   },
   "build": {
-    "appId": "com.ports.app",
+    "appId": "com.nexvyn.roulette",
     "productName": "Roulette",
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "compression": "maximum",
@@ -63,21 +69,22 @@
   "dependencies": {
     "@hugeicons/core-free-icons": "^4.3.5",
     "@hugeicons/react": "^1.1.10",
-    "electron-store": "^10.0.1",
-    "motion": "^13.5.1",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "electron-store": "^12.0.0",
+    "motion": "^14.6.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "runeicons-brands": "^0.1.0"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "@vitejs/plugin-react": "^4.4.1",
-    "electron": "^37.0.0",
-    "electron-builder": "^26.0.0",
-    "electron-vite": "^3.1.0",
-    "typescript": "^5.8.0",
-    "vite": "^6.3.5"
-  }
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "electron": "^45.0.0",
+    "electron-builder": "^26.18.0",
+    "electron-vite": "^6.0.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5"
+  },
+  "packageManager": "pnpm@10.34.5"
 }

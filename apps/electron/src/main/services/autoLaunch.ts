@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 
 const LINUX_AUTOSTART_DIR = path.join(os.homedir(), ".config", "autostart");
-const LINUX_AUTOSTART_FILE = path.join(LINUX_AUTOSTART_DIR, "ports.desktop");
+const LINUX_AUTOSTART_FILE = path.join(LINUX_AUTOSTART_DIR, "roulette.desktop");
 const HIDDEN_ARG = "--hidden";
 
 export async function setLaunchAtLogin(enabled: boolean): Promise<boolean> {
@@ -16,7 +16,6 @@ export async function setLaunchAtLogin(enabled: boolean): Promise<boolean> {
 
   app.setLoginItemSettings({
     openAtLogin: enabled,
-    openAsHidden: true,
     path: app.getPath("exe"),
     args: [HIDDEN_ARG]
   });

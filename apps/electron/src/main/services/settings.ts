@@ -6,7 +6,7 @@ interface StoredData extends AppSettings {
   pinnedPorts: number[];
 }
 
-const defaults: StoredData = {
+const defaults = {
   refreshIntervalSeconds: 5,
   launchAtLogin: false,
   hasCompletedOnboarding: false,
@@ -15,7 +15,7 @@ const defaults: StoredData = {
   themeSource: "system",
   customPortNames: {},
   pinnedPorts: []
-};
+} satisfies StoredData;
 
 const store = new Store<StoredData>({ defaults });
 
