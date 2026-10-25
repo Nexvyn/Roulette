@@ -13,7 +13,31 @@ permissions:
   contents: write
 
 jobs:
+  # One draft release for the version; every platform then uploads into it.
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      id: ${{ steps.release.outputs.id }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { version } = require("./apps/tauri/package.json");
+            const tag = context.ref.startsWith("refs/tags/") ? context.ref.replace("refs/tags/", "") : `v${version}`;
+            const { data } = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: tag,
+              name: `Roulette ${tag}`,
+              body: "Download the installer for your system below.",
+              draft: true,
+            });
+            core.setOutput("id", data.id);
+
   build:
+    needs: create-release
     strategy:
       fail-fast: false
       matrix:
@@ -64,9 +88,5 @@ jobs:
         with:
           projectPath: apps/tauri
           tauriScript: pnpm tauri
-          tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__' }}
-          releaseName: Roulette ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__' }}
-          releaseBody: Download the installer for your system below.
-          releaseDraft: true
-          prerelease: false
+          releaseId: ${{ needs.create-release.outputs.id }}
           args: ${{ matrix.args }}
