@@ -115,17 +115,24 @@ impl AppStore {
     pub fn rename_port(&mut self, port: u16, name: &str) {
         let trimmed = name.trim();
         if trimmed.is_empty() { self.reset_port_name(port); return; }
-        settings::set_custom_port_name(port, trimmed);
+        let Some(project) = self.detected_name(port) else { return };
+        settings::set_custom_port_name(port, &project, trimmed);
         for entry in &mut self.state.entries {
             if entry.port == port { entry.project_name = trimmed.into(); }
         }
     }
 
     pub fn reset_port_name(&mut self, port: u16) {
-        settings::clear_custom_port_name(port);
+        if let Some(project) = self.detected_name(port) {
+            settings::clear_custom_port_name(port, &project);
+        }
         for entry in &mut self.state.entries {
             if entry.port == port { entry.project_name = entry.detected_project_name.clone(); }
         }
+    }
+
+    fn detected_name(&self, port: u16) -> Option<String> {
+        self.state.entries.iter().find(|e| e.port == port).map(|e| e.detected_project_name.clone())
     }
 
     pub fn set_pinned(&mut self, port: u16, pinned: bool) {
@@ -183,7 +190,7 @@ impl AppStore {
         let names = settings::get_custom_port_names();
         let pinned = settings::get_pinned_ports();
         entries.into_iter().map(|mut e| {
-            if let Some(custom) = names.get(&e.port.to_string()) {
+            if let Some(custom) = names.get(&settings::name_key(e.port, &e.detected_project_name)).or_else(|| names.get(&e.port.to_string())) {
                 e.project_name = custom.clone();
             }
             e.pinned = pinned.contains(&e.port);

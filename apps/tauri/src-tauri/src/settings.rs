@@ -115,14 +115,20 @@ pub fn get_custom_port_names() -> HashMap<String, String> {
     load().custom_port_names
 }
 
-pub fn set_custom_port_name(port: u16, name: &str) {
+pub fn name_key(port: u16, project: &str) -> String {
+    format!("{port}:{project}")
+}
+
+pub fn set_custom_port_name(port: u16, project: &str, name: &str) {
     let mut data = load();
-    data.custom_port_names.insert(port.to_string(), name.into());
+    data.custom_port_names.remove(&port.to_string());
+    data.custom_port_names.insert(name_key(port, project), name.into());
     save(&data);
 }
 
-pub fn clear_custom_port_name(port: u16) {
+pub fn clear_custom_port_name(port: u16, project: &str) {
     let mut data = load();
     data.custom_port_names.remove(&port.to_string());
+    data.custom_port_names.remove(&name_key(port, project));
     save(&data);
 }
