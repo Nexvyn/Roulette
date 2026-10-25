@@ -1,10 +1,11 @@
-# Lyra
+# Roulette
 
-> See every local dev server running on your machine, instantly.
+> Every localhost, in one place.
 
-Lyra lives in your menu bar and automatically detects every development server
-running on your machine. See what's on which port, kill processes, open them in
-your browser, and stay organized — without ever opening a terminal.
+Roulette lives in your menu bar (the system tray on Windows) and finds every
+development server running on your machine. Each one shows its project, git
+branch, port and uptime, and you can open it, kill it, rename it, pin it or
+share it with a public link, without opening a terminal.
 
 ## Apps
 
@@ -12,38 +13,55 @@ your browser, and stay organized — without ever opening a terminal.
 |-----|-------|----------|
 | Electron | Electron + React + TypeScript | `apps/electron/` |
 | Tauri | Tauri 2 + Rust + React + TypeScript | `apps/tauri/` |
-| Website | Next.js + Bun | `apps/website/` |
+| Website | Next.js + React + Tailwind CSS | `apps/website/` |
+
+The Electron and Tauri apps have the same features and share the same panel UI.
 
 ## Features
 
-- Auto-detects running dev servers (Node, Python, Go, Vite, Next.js, and more)
-- Shows process name, project folder, git branch, and uptime
-- Kill, open in browser, copy URL or port — one click
-- Rename and pin your most-used servers
-- Search and filter across all running ports
-- Lightweight tray icon with live port count badge
-- Dark mode support
+- Finds running dev servers on macOS (`lsof`), Windows (`netstat`) and Linux (`ss`)
+- Shows the project folder, git branch, port and uptime, with the framework's logo on each row
+- Open in the browser, kill one server or all of them, copy the URL or port
+- Rename and pin servers; both are kept across restarts
+- Share any server through a Cloudflare Quick Tunnel: a public `trycloudflare.com` link, no account needed (uses your own `cloudflared`)
+- Search with `/`, move with the arrow keys, open with `Enter`, kill with `Backspace`
+- Settings: launch at login, sort order, rescan interval, diagnostics
+- Follows the system light or dark theme
+- On macOS it stays in the menu bar only, with no Dock icon
 
 ## Development
 
 ### Electron
 
 ```bash
-cd apps/electron && npm install && npm run dev
+cd apps/electron
+npm install
+npm run dev
 ```
 
-### Tauri (requires Rust toolchain)
+### Tauri (requires the Rust toolchain)
 
 ```bash
-cd apps/tauri && npm install && npm run dev
+cd apps/tauri
+npm install
+cargo tauri dev
 ```
 
 ### Website
 
 ```bash
-cd apps/website && bun install && bun run dev
+cd apps/website
+npm install
+npm run dev
 ```
+
+## Building
+
+- **Electron:** `npm run dist:win`, `npm run dist:mac` or `npm run dist:linux` in `apps/electron`. Installers land in `apps/electron/dist/`.
+- **Tauri:** `cargo tauri build` in `apps/tauri`. Installers land in `apps/tauri/src-tauri/target/release/bundle/`.
+
+A macOS build has to be made on a Mac.
 
 ## License
 
-MIT
+[MIT](LICENSE)
