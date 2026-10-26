@@ -115,12 +115,20 @@ pub async fn containers_by_port() -> Option<HashMap<u16, ContainerInfo>> {
 }
 
 pub async fn stop(id: &str) -> Result<(), String> {
+    run(&["stop", "--time", "3", id], "stop").await
+}
+
+pub async fn restart(id: &str) -> Result<(), String> {
+    run(&["restart", "--time", "3", id], "restart").await
+}
+
+async fn run(args: &[&str], verb: &str) -> Result<(), String> {
     let bin = binary().await.ok_or("Couldn't find the docker command.")?;
-    match tokio::time::timeout(Duration::from_secs(15), command(&bin, &["stop", "--time", "3", id]).output()).await {
+    match tokio::time::timeout(Duration::from_secs(15), command(&bin, args).output()).await {
         Ok(Ok(out)) if out.status.success() => Ok(()),
         Ok(Ok(out)) => Err(String::from_utf8_lossy(&out.stderr).trim().to_string()),
         Ok(Err(e)) => Err(e.to_string()),
-        Err(_) => Err("Docker took too long to stop the container.".into()),
+        Err(_) => Err(format!("Docker took too long to {verb} the container.")),
     }
 }
 

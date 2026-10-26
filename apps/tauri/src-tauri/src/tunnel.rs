@@ -49,7 +49,7 @@ pub async fn start(app: AppHandle, store: Arc<Mutex<AppStore>>, port: u16) {
             return;
         }
         lifetime = crate::settings::link_expiry_minutes(&s.get_settings().link_expiry).map(|m| Duration::from_secs(m * 60));
-        crate::emit_state(&app, &s);
+        crate::emit_state(&app, &mut s);
     }
 
     tauri::async_runtime::spawn(async move {
@@ -60,7 +60,7 @@ pub async fn start(app: AppHandle, store: Arc<Mutex<AppStore>>, port: u16) {
             Outcome::Exited => s.end_tunnel(port),
             Outcome::Failed(message) => s.fail_tunnel(port, TunnelInfo::error(message)),
         }
-        crate::emit_state(&app, &s);
+        crate::emit_state(&app, &mut s);
     });
 }
 
@@ -149,7 +149,7 @@ async fn run(app: &AppHandle, store: &Arc<Mutex<AppStore>>, port: u16, mut stop_
                             let mut s = store.lock().await;
                             if s.tunnel_status(port).as_deref() == Some("starting") {
                                 s.set_tunnel(port, TunnelInfo::live(link, expires_at));
-                                crate::emit_state(&app, &s);
+                                crate::emit_state(&app, &mut s);
                             }
                         });
                     }

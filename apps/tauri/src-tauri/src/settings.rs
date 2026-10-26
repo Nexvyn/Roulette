@@ -14,6 +14,38 @@ pub struct AppSettings {
     pub theme_source: String,
     #[serde(default = "default_link_expiry")]
     pub link_expiry: String,
+    #[serde(default = "default_memory_alert")]
+    pub memory_alert_gb: f64,
+    #[serde(default = "yes")]
+    pub leak_alerts: bool,
+    #[serde(default = "yes")]
+    pub notifications: bool,
+    #[serde(default = "default_cleanup")]
+    pub cleanup: String,
+    #[serde(default = "default_idle_hours")]
+    pub idle_hours: u64,
+    #[serde(default = "yes")]
+    pub shortcut: bool,
+    #[serde(default = "yes")]
+    pub agent_sessions: bool,
+    #[serde(default)]
+    pub pull_requests: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+fn default_memory_alert() -> f64 {
+    4.0
+}
+
+fn default_cleanup() -> String {
+    "off".into()
+}
+
+fn default_idle_hours() -> u64 {
+    2
 }
 
 fn default_link_expiry() -> String {
@@ -38,6 +70,14 @@ impl Default for AppSettings {
             sort_by: "port".into(),
             theme_source: "system".into(),
             link_expiry: default_link_expiry(),
+            memory_alert_gb: default_memory_alert(),
+            leak_alerts: true,
+            notifications: true,
+            cleanup: default_cleanup(),
+            idle_hours: default_idle_hours(),
+            shortcut: true,
+            agent_sessions: true,
+            pull_requests: false,
         }
     }
 }
@@ -71,6 +111,12 @@ fn config_path() -> PathBuf {
         let _ = fs::copy(&old, &path);
     }
     path
+}
+
+pub fn log_path(port: u16) -> PathBuf {
+    let dir = config_path().parent().map(|p| p.join("logs")).unwrap_or_else(|| PathBuf::from("logs"));
+    let _ = fs::create_dir_all(&dir);
+    dir.join(format!("port-{port}.log"))
 }
 
 fn load() -> StoredData {
@@ -113,6 +159,36 @@ pub fn update_settings(patch: &serde_json::Value) -> AppSettings {
         if ["1h", "4h", "never"].contains(&v) {
             data.settings.link_expiry = v.to_string();
         }
+    }
+    if let Some(v) = patch.get("memoryAlertGb").and_then(|v| v.as_f64()) {
+        if [0.0, 1.0, 2.0, 4.0, 8.0].contains(&v) {
+            data.settings.memory_alert_gb = v;
+        }
+    }
+    if let Some(v) = patch.get("leakAlerts").and_then(|v| v.as_bool()) {
+        data.settings.leak_alerts = v;
+    }
+    if let Some(v) = patch.get("notifications").and_then(|v| v.as_bool()) {
+        data.settings.notifications = v;
+    }
+    if let Some(v) = patch.get("cleanup").and_then(|v| v.as_str()) {
+        if ["off", "ask", "auto"].contains(&v) {
+            data.settings.cleanup = v.to_string();
+        }
+    }
+    if let Some(v) = patch.get("idleHours").and_then(|v| v.as_u64()) {
+        if [1, 2, 4, 8].contains(&v) {
+            data.settings.idle_hours = v;
+        }
+    }
+    if let Some(v) = patch.get("shortcut").and_then(|v| v.as_bool()) {
+        data.settings.shortcut = v;
+    }
+    if let Some(v) = patch.get("agentSessions").and_then(|v| v.as_bool()) {
+        data.settings.agent_sessions = v;
+    }
+    if let Some(v) = patch.get("pullRequests").and_then(|v| v.as_bool()) {
+        data.settings.pull_requests = v;
     }
     save(&data);
     data.settings
