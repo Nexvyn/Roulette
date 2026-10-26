@@ -5,6 +5,30 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [0.1.2] - 2026-10-27
+
+### Added
+
+- Memory and CPU for each server, added up over everything the server started, next to its uptime. On Windows this is private memory, since Windows trims the working set of idle processes
+- A warning when a server uses more than your limit (4 GB by default; 1, 2, 4 or 8 GB, or off) or grows by more than 500 MB in 10 minutes: the memory turns amber, the tray icon gets an amber dot and you get one notification. Snooze it for an hour from the details or the right-click menu
+- Details: click a server to see its folder, command, branch, 10 minutes of memory and CPU, and its processes, with Open, Restart and Stop
+- Restart reruns the server's command in the same folder with the same environment. Its output goes to a log file in the Roulette settings folder. Docker containers restart with `docker restart`
+- Clean up, in place of Kill all: tick the servers to stop, with ones that sit idle or whose folder is gone ticked for you. Databases (Postgres, Redis, MongoDB, MySQL) are never ticked for you
+- Forgotten servers (Settings): Off, Ask (a notification) or Automatic (stops them). Automatic never stops databases, pinned, shared or growing servers
+- A global shortcut opens the panel: Ctrl Alt P, or ⌥⌘P on macOS
+- Servers started by Claude Code or Codex show the session that started them; click it to copy the command that resumes the session. Conductor workspaces and Pane terminals show too, and a Pane terminal opens with a click (both are macOS apps)
+- Open in VS Code, from the details or the right-click menu
+- Pull request for the branch, through the GitHub CLI you're signed in to (off by default)
+- `roulette list` and `roulette list --json` in a terminal, so scripts and coding agents can see what's running. Install it from Settings
+- A memory bar under the list that splits the machine's RAM into servers, other apps and free
+
+### Changed
+
+- Stop and Kill end the whole server, including the package manager that started it (`pnpm dev` over `next-server`), on every system. A runner that also started other servers is left alone
+- Kill all skips databases
+
+---
+
 ## [0.1.1] - 2026-10-25
 
 ### Added

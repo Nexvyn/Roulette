@@ -32,15 +32,23 @@ but it gets no new features or releases.
 ## Features
 
 - Finds running dev servers on macOS (`lsof`), Windows (`netstat`) and Linux (`ss`)
-- Shows the project folder, git branch, port and uptime, with the framework's logo on each row
-- Open in the browser, kill one server or all of them, copy the URL or port
-- Picks up Docker containers that publish a port, showing the container name, image and compose project. Stop runs `docker stop` on that container only, and Kill all leaves containers running
+- Shows the project folder, git branch, port, uptime and memory, with the framework's logo on each row
+- Open in the browser, stop or restart a server, copy the URL or port. Stop ends the whole server, including the package manager that started it
+- Warns when a server uses too much memory or keeps growing: amber memory, a dot on the tray icon and one notification (limit in Settings, snooze for an hour)
+- Details for each server: folder, command, branch, processes, and 10 minutes of memory and CPU
+- Clean up: tick the servers to stop, with idle ones and ones whose folder is gone ticked for you. Databases are never ticked for you. Forgotten servers can also be reported or stopped on their own (Settings)
+- Links a server to the Claude Code or Codex session, Conductor workspace or Pane terminal that started it, and (optional) to the branch's pull request through the GitHub CLI
+- Opens a server's folder in VS Code
+- A memory bar splits the machine's RAM into servers, other apps and free
+- `roulette list` and `roulette list --json` in a terminal, for scripts and coding agents (install it from Settings)
+- Opens with a global shortcut: Ctrl Alt P, or ⌥⌘P on macOS
+- Picks up Docker containers that publish a port, showing the container name, image and compose project. Stop runs `docker stop` on that container only
 - Rename and pin servers; both are kept across restarts. A name belongs to its port and project, so another project on the same port starts with its own name
 - Share any server through a Cloudflare Quick Tunnel: a public `trycloudflare.com` link, no account needed (uses your own `cloudflared`)
   - Links can expire on their own after 1 or 4 hours (Settings), and the row shows the time left
   - Stop Sharing ends the link at once and leaves the server running. Every share gets a new random address
 - Search with `/`, move with the arrow keys, open with `Enter`, kill with `Backspace`
-- Settings: launch at login, sort order, rescan interval, link expiry, diagnostics
+- Settings: launch at login, shortcut, notifications, sort order, rescan interval, memory limit, forgotten servers, link expiry, integrations, diagnostics
 - Updates itself: when a new version is out, the panel offers **Restart to update** (on Linux this works for the AppImage; `.deb` and `.rpm` installs get a download link)
 - Follows the system light or dark theme
 - The panel opens next to the tray icon and closes when you click outside it
