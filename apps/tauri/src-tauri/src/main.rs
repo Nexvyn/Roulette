@@ -1,7 +1,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod agents;
+mod cli;
 mod docker;
+mod github;
+mod monitor;
 mod port_scanner;
+mod procs;
 mod settings;
 mod store;
 mod tunnel;
@@ -42,7 +47,7 @@ async fn get_settings(store: State<'_, SharedStore>) -> Result<serde_json::Value
 async fn scan_now(store: State<'_, SharedStore>, app: AppHandle) -> Result<(), String> {
     let mut s = store.lock().await;
     s.scan_now().await;
-    emit_state(&app, &s);
+    emit_state(&app, &mut s);
     Ok(())
 }
 
@@ -50,7 +55,7 @@ async fn scan_now(store: State<'_, SharedStore>, app: AppHandle) -> Result<(), S
 async fn kill_port(store: State<'_, SharedStore>, app: AppHandle, port: u16, pid: u32) -> Result<(), String> {
     let mut s = store.lock().await;
     s.kill_port(port, pid).await;
-    emit_state(&app, &s);
+    emit_state(&app, &mut s);
     Ok(())
 }
 
@@ -58,8 +63,80 @@ async fn kill_port(store: State<'_, SharedStore>, app: AppHandle, port: u16, pid
 async fn kill_all(store: State<'_, SharedStore>, app: AppHandle) -> Result<(), String> {
     let mut s = store.lock().await;
     s.kill_all().await;
-    emit_state(&app, &s);
+    emit_state(&app, &mut s);
     Ok(())
+}
+
+#[tauri::command]
+async fn stop_ports(store: State<'_, SharedStore>, app: AppHandle, ports: Vec<u16>) -> Result<(), String> {
+    let mut s = store.lock().await;
+    s.stop_many(&ports).await;
+    emit_state(&app, &mut s);
+    Ok(())
+}
+
+#[tauri::command]
+async fn restart_port(store: State<'_, SharedStore>, app: AppHandle, port: u16) -> Result<(), String> {
+    let (plan, tree) = {
+        let mut s = store.lock().await;
+        let plan = s.begin_restart(port);
+        let tree = match &plan {
+            Ok(store::RestartPlan::Process { root, .. }) => s.tree(*root),
+            _ => vec![],
+        };
+        emit_state(&app, &mut s);
+        (plan?, tree)
+    };
+    let result = store::run_restart(plan, tree).await;
+    let mut s = store.lock().await;
+    if let Err(e) = &result {
+        s.fail_restart(port, e);
+    }
+    s.scan_now().await;
+    emit_state(&app, &mut s);
+    result
+}
+
+#[tauri::command]
+async fn snooze_port(store: State<'_, SharedStore>, app: AppHandle, port: u16) -> Result<(), String> {
+    let mut s = store.lock().await;
+    s.snooze(port);
+    emit_state(&app, &mut s);
+    Ok(())
+}
+
+#[tauri::command]
+async fn open_link(url: String) -> Result<(), String> {
+    if !url.starts_with("https://") && !url.starts_with("pane://open?") {
+        return Err("Only https links open from here.".into());
+    }
+    open::that(url).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn open_in_editor(path: String) -> Result<(), String> {
+    if !std::path::Path::new(&path).is_dir() {
+        return Err("That folder no longer exists.".into());
+    }
+    let missing = || "Couldn't open VS Code. Install it, or add the code command to your PATH.".to_string();
+    #[cfg(target_os = "windows")]
+    let status = {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("cmd").raw_arg(format!("/c code \"{path}\"")).creation_flags(0x08000000).status()
+    };
+    #[cfg(target_os = "macos")]
+    let status = std::process::Command::new("open").args(["-a", "Visual Studio Code", &path]).status();
+    #[cfg(target_os = "linux")]
+    let status = std::process::Command::new("code").arg(&path).status();
+    match status {
+        Ok(s) if s.success() => Ok(()),
+        _ => Err(missing()),
+    }
+}
+
+#[tauri::command]
+async fn install_cli() -> Result<String, String> {
+    cli::install()
 }
 
 #[tauri::command]
@@ -72,7 +149,7 @@ async fn start_tunnel(store: State<'_, SharedStore>, app: AppHandle, port: u16) 
 async fn stop_tunnel(store: State<'_, SharedStore>, app: AppHandle, port: u16) -> Result<(), String> {
     let mut s = store.lock().await;
     s.end_tunnel(port);
-    emit_state(&app, &s);
+    emit_state(&app, &mut s);
     Ok(())
 }
 
@@ -90,7 +167,7 @@ async fn copy_url(app: AppHandle, url: String) -> Result<(), String> {
 async fn rename_port(store: State<'_, SharedStore>, app: AppHandle, port: u16, name: String) -> Result<(), String> {
     let mut s = store.lock().await;
     s.rename_port(port, &name);
-    emit_state(&app, &s);
+    emit_state(&app, &mut s);
     Ok(())
 }
 
@@ -98,7 +175,7 @@ async fn rename_port(store: State<'_, SharedStore>, app: AppHandle, port: u16, n
 async fn reset_port_name(store: State<'_, SharedStore>, app: AppHandle, port: u16) -> Result<(), String> {
     let mut s = store.lock().await;
     s.reset_port_name(port);
-    emit_state(&app, &s);
+    emit_state(&app, &mut s);
     Ok(())
 }
 
@@ -106,15 +183,35 @@ async fn reset_port_name(store: State<'_, SharedStore>, app: AppHandle, port: u1
 async fn set_pinned(store: State<'_, SharedStore>, app: AppHandle, port: u16, pinned: bool) -> Result<(), String> {
     let mut s = store.lock().await;
     s.set_pinned(port, pinned);
-    emit_state(&app, &s);
+    emit_state(&app, &mut s);
     Ok(())
 }
 
 #[tauri::command]
-async fn update_settings(store: State<'_, SharedStore>, patch: serde_json::Value) -> Result<serde_json::Value, String> {
+async fn update_settings(store: State<'_, SharedStore>, app: AppHandle, patch: serde_json::Value) -> Result<serde_json::Value, String> {
     let mut s = store.lock().await;
     s.update_settings(&patch);
+    if let Some(on) = patch.get("shortcut").and_then(|v| v.as_bool()) {
+        set_shortcut(&app, on);
+    }
     serde_json::to_value(s.get_settings()).map_err(|e| e.to_string())
+}
+
+fn shortcut() -> tauri_plugin_global_shortcut::Shortcut {
+    use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut};
+    let mods = if cfg!(target_os = "macos") { Modifiers::SUPER | Modifiers::ALT } else { Modifiers::CONTROL | Modifiers::ALT };
+    Shortcut::new(Some(mods), Code::KeyP)
+}
+
+fn set_shortcut(app: &AppHandle, on: bool) {
+    use tauri_plugin_global_shortcut::GlobalShortcutExt;
+    let gs = app.global_shortcut();
+    let registered = gs.is_registered(shortcut());
+    if on && !registered {
+        let _ = gs.register(shortcut());
+    } else if !on && registered {
+        let _ = gs.unregister(shortcut());
+    }
 }
 
 #[tauri::command]
@@ -217,13 +314,66 @@ async fn quit(app: AppHandle, store: SharedStore) {
     app.exit(0);
 }
 
-fn emit_state(app: &AppHandle, store: &AppStore) {
+fn emit_state(app: &AppHandle, store: &mut AppStore) {
     let _ = app.emit("state-changed", store.get_state());
+    let attention = store.needs_attention();
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
         let count = store.get_state().entries.len();
-        let tip = if count > 0 { format!("Roulette ({count})") } else { "Roulette".into() };
+        let tip = match (count, attention) {
+            (0, _) => "Roulette".to_string(),
+            (n, true) => format!("Roulette ({n}) · a server needs attention"),
+            (n, false) => format!("Roulette ({n})"),
+        };
         let _ = tray.set_tooltip(Some(tip));
+        if TRAY_ALERT.swap(attention, std::sync::atomic::Ordering::SeqCst) != attention {
+            let _ = tray.set_icon(Some(tray_icon(attention)));
+        }
     }
+    use tauri_plugin_notification::NotificationExt;
+    for alert in store.take_alerts() {
+        let _ = app.notification().builder().title(alert.title).body(alert.body).show();
+    }
+}
+
+static TRAY_ALERT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The tray icon, with an amber dot in the corner while a server is using too much memory.
+fn tray_icon(alert: bool) -> Image<'static> {
+    let icon = Image::from_bytes(include_bytes!("../icons/icon.png")).expect("bundled tray icon");
+    if !alert {
+        return icon.to_owned();
+    }
+    let (w, h) = (icon.width() as i32, icon.height() as i32);
+    let mut rgba = icon.rgba().to_vec();
+    let r = w.min(h) as f32 * 0.2;
+    let (cx, cy) = (w as f32 - r - 1.0, h as f32 - r - 1.0);
+    for y in 0..h {
+        for x in 0..w {
+            let d = ((x as f32 + 0.5 - cx).powi(2) + (y as f32 + 0.5 - cy).powi(2)).sqrt();
+            let cover = (r + 0.5 - d).clamp(0.0, 1.0);
+            if cover <= 0.0 {
+                continue;
+            }
+            let i = ((y * w + x) * 4) as usize;
+            for (c, v) in [0xf5u8, 0x9e, 0x0b].iter().enumerate() {
+                rgba[i + c] = (rgba[i + c] as f32 * (1.0 - cover) + *v as f32 * cover) as u8;
+            }
+            rgba[i + 3] = rgba[i + 3].max((cover * 255.0) as u8);
+        }
+    }
+    Image::new_owned(rgba, w as u32, h as u32)
+}
+
+/// The global shortcut opens the panel where the tray click last put it.
+fn toggle_from_shortcut(window: &WebviewWindow) {
+    if window.is_visible().unwrap_or(false) {
+        let _ = window.hide();
+    } else {
+        position_near_tray(window);
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+    sync_show_label(window);
 }
 
 fn sync_show_label(window: &WebviewWindow) {
@@ -493,6 +643,11 @@ async fn resize_window(window: WebviewWindow, height: f64) -> Result<(), String>
 }
 
 fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(code) = cli::run(&args) {
+        std::process::exit(code);
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             if let Some(w) = app.get_webview_window("main") {
@@ -502,6 +657,18 @@ fn main() {
         }))
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _shortcut, event| {
+                    if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                        if let Some(w) = app.get_webview_window("main") {
+                            toggle_from_shortcut(&w);
+                        }
+                    }
+                })
+                .build(),
+        )
         .manage(updater::Updates::default())
         .setup(|app| {
             #[cfg(target_os = "macos")]
@@ -518,11 +685,8 @@ fn main() {
             let menu = Menu::with_items(app, &[&show_item, &refresh_item, &launch_item, &quit_item])?;
             app.manage(TrayItems { show: show_item.clone(), launch: launch_item.clone() });
 
-            let icon_bytes = include_bytes!("../icons/icon.png");
-            let icon = Image::from_bytes(icon_bytes).unwrap_or_else(|_| Image::from_bytes(icon_bytes).unwrap());
-
             let _tray = TrayIconBuilder::with_id(TRAY_ID)
-                .icon(icon)
+                .icon(tray_icon(false))
                 .tooltip("Roulette")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
@@ -551,7 +715,7 @@ fn main() {
                             tauri::async_runtime::spawn(async move {
                                 let mut s = store.lock().await;
                                 s.scan_now().await;
-                                emit_state(&app_handle, &s);
+                                emit_state(&app_handle, &mut s);
                             });
                         }
                         _ => {}
@@ -572,7 +736,7 @@ fn main() {
                 {
                     let mut s = store_bg.lock().await;
                     s.scan_now().await;
-                    emit_state(&app_handle, &s);
+                    emit_state(&app_handle, &mut s);
                 }
                 loop {
                     let secs = {
@@ -581,11 +745,15 @@ fn main() {
                     tokio::time::sleep(std::time::Duration::from_secs(secs)).await;
                     let mut s = store_bg.lock().await;
                     s.scan_now().await;
-                    emit_state(&app_handle, &s);
+                    emit_state(&app_handle, &mut s);
                 }
             });
 
             updater::start(app.handle().clone());
+
+            if tauri::async_runtime::block_on(async { store.lock().await.get_settings().shortcut }) {
+                set_shortcut(app.handle(), true);
+            }
 
             SHOW_WHEN_READY.store(cfg!(any(debug_assertions, target_os = "macos")), std::sync::atomic::Ordering::SeqCst);
 
@@ -610,6 +778,12 @@ fn main() {
             scan_now,
             kill_port,
             kill_all,
+            stop_ports,
+            restart_port,
+            snooze_port,
+            open_link,
+            open_in_editor,
+            install_cli,
             open_port,
             start_tunnel,
             stop_tunnel,
