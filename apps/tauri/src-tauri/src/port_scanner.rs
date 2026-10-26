@@ -46,6 +46,8 @@ pub struct PortEntry {
     pub pinned: bool,
     pub tunnel: Option<crate::tunnel::TunnelInfo>,
     pub container: Option<ContainerInfo>,
+    #[serde(flatten)]
+    pub live: crate::monitor::Live,
 }
 
 impl PortEntry {
@@ -217,6 +219,7 @@ async fn build_entries(parsed: Vec<ParsedPort>) -> Vec<PortEntry> {
             pinned: false,
             tunnel: None,
             container,
+            live: Default::default(),
         });
     }
     result
