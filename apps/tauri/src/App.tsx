@@ -53,7 +53,12 @@ export function App() {
     return {
       scan: () => void invoke("scan_now"),
       kill: (port, pid) => void invoke("kill_port", { port, pid }),
-      killAll: () => void invoke("kill_all"),
+      stopMany: (ports) => void invoke("stop_ports", { ports }),
+      restart: (port) => invoke<void>("restart_port", { port }),
+      snooze: (port) => void invoke("snooze_port", { port }),
+      openLink: (url) => void invoke("open_link", { url }).catch(console.error),
+      installCli: () => invoke<string>("install_cli"),
+      openInEditor: (path) => invoke<void>("open_in_editor", { path }),
       open: (port) => void invoke("open_port", { port }),
       copy: (text) => void invoke("copy_url", { url: text }),
       rename: (port, name) => void invoke("rename_port", { port, name }),

@@ -3,34 +3,45 @@ import { AnimatePresence, MotionGlobalConfig, motion, useReducedMotion } from "m
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import {
   Alert02Icon,
+  ArrowLeft01Icon,
   ArrowUpRight01Icon,
   Cancel01Icon,
   CancelCircleIcon,
   CheckmarkCircle02Icon,
+  ComputerTerminal01Icon,
   ContainerIcon,
   Copy01Icon,
   GitBranchIcon,
   Globe02Icon,
+  InformationCircleIcon,
   Link01Icon,
   MoreHorizontalIcon,
+  NotificationSnooze01Icon,
   PencilEdit02Icon,
   PinIcon,
   PinOffIcon,
   RefreshIcon,
+  RepeatIcon,
   Search01Icon,
   ShutDownIcon,
   StarIcon,
   StopCircleIcon,
+  VisualStudioCodeIcon,
 } from "@hugeicons/core-free-icons";
 import { runtimeFor } from "./runtime";
 import { Squircle, useSquircle } from "./squircle";
-import type { AppSettings, LinkExpiry, PortEntry, ScanState, SortOption, TunnelInfo, UpdateInfo } from "./types";
+import type { AppSettings, CleanupMode, LinkExpiry, PortEntry, Sample, ScanState, SortOption, SystemMemory, TunnelInfo, UpdateInfo } from "./types";
 import "./panel.css";
 
 export interface Backend {
   scan(): void;
   kill(port: number, pid: number): void;
-  killAll(): void;
+  stopMany(ports: number[]): void;
+  restart(port: number): Promise<void>;
+  snooze(port: number): void;
+  openLink(url: string): void;
+  installCli(): Promise<string>;
+  openInEditor(path: string): Promise<void>;
   open(port: number): void;
   copy(text: string): void;
   rename(port: number, name: string): void;
@@ -55,7 +66,8 @@ const hover = { duration: 0.1, ease: [0.23, 1, 0.32, 1] } as const;
 const glide = { type: "spring", duration: 0.3, bounce: 0 } as const;
 const swap = { type: "spring", duration: 0.35, bounce: 0 } as const;
 
-const MENU_H = 250;
+const MENU_H = 320;
+const SHORTCUT = IS_MAC ? "⌥⌘P" : "Ctrl Alt P";
 const SETTINGS_MIN = 380;
 const EDGE = 6;
 
@@ -128,6 +140,59 @@ function formatUptime(seconds: number | null) {
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}h ${m % 60}m`;
   return `${Math.floor(h / 24)}d ${h % 24}h`;
+}
+
+function formatBytes(bytes: number | null) {
+  if (bytes === null) return "";
+  const mb = bytes / 1048576;
+  if (mb < 1024) return `${Math.round(mb)} MB`;
+  const gb = mb / 1024;
+  return `${gb >= 10 ? Math.round(gb) : gb.toFixed(1)} GB`;
+}
+
+const GB = 1073741824;
+
+function reasonText(e: PortEntry) {
+  if (e.cleanup === "folder") return "Folder deleted";
+  if (e.cleanup === "idle") return `Idle for ${formatUptime(e.idleSeconds)}`;
+  if (e.protected) return "Database, kept unless you tick it";
+  return null;
+}
+
+function alertText(e: PortEntry, settings: AppSettings) {
+  if (e.attention === "memory") return `Using ${formatBytes(e.memoryBytes)}, over your ${settings.memoryAlertGb} GB limit`;
+  if (e.attention === "growing") return "Grew by more than 500 MB in 10 minutes";
+  return null;
+}
+
+const SPAN = 10 * 60 * 1000;
+
+function Chart({ label, value, samples, pick, limit, warn }: { label: string; value: string; samples: Sample[]; pick: "mem" | "cpu"; limit?: number; warn?: boolean }) {
+  const W = 300;
+  const H = 40;
+  const now = samples.length ? samples[samples.length - 1].t : 0;
+  const top = Math.max(...samples.map((s) => s[pick]), pick === "cpu" ? 10 : 64 * 1048576);
+  const showLimit = limit !== undefined && limit > 0 && limit < top * 1.6;
+  const max = Math.max(top, showLimit ? limit! : 0) * 1.12;
+  const pts = samples.map((s) => [Math.max(0, W - ((now - s.t) / SPAN) * W), H - (s[pick] / max) * H] as const);
+  const line = pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
+  return (
+    <div className="sp-chart">
+      <div className="sp-chart-head">
+        <span>{label}</span>
+        <span className={warn ? "sp-warn" : ""}>{value}</span>
+      </div>
+      {pts.length > 1 ? (
+        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="sp-chart-svg" aria-hidden>
+          <path d={`${line} L${pts[pts.length - 1][0]} ${H} L${pts[0][0]} ${H} Z`} className="sp-chart-area" />
+          {showLimit ? <line x1="0" x2={W} y1={H - (limit! / max) * H} y2={H - (limit! / max) * H} className="sp-chart-limit" vectorEffect="non-scaling-stroke" /> : null}
+          <path d={line} className={`sp-chart-line ${warn ? "is-warn" : ""}`} vectorEffect="non-scaling-stroke" />
+        </svg>
+      ) : (
+        <div className="sp-chart-empty">Collecting the last 10 minutes…</div>
+      )}
+    </div>
+  );
 }
 
 const isDocker = (e: PortEntry) => e.container !== null || /^(com\.docker.*|docker|dockerd|docker-proxy|vpnkit|vpnkit-bridge|wslrelay)$/i.test(e.processName);
@@ -213,6 +278,10 @@ function Row({
   onRename,
   onCopyLink,
   onKill,
+  onOpen,
+  cleaning,
+  checked,
+  alert,
   backend,
 }: {
   entry: PortEntry;
@@ -226,28 +295,60 @@ function Row({
   onRename: (value: string) => void;
   onCopyLink: () => void;
   onKill: () => void;
+  onOpen: () => void;
+  cleaning: boolean;
+  checked: boolean;
+  alert: string | null;
   backend: Backend;
 }) {
   const tunnel = entry.tunnel;
   const sharing = tunnel !== null && tunnel.status !== "error";
   const terminating = entry.status === "terminating";
+  const restarting = entry.status === "restarting";
   const done = useRef(false);
   const commit = (value: string) => {
     if (done.current) return;
     done.current = true;
     onRename(value);
   };
+  /* A click on the name waits a moment, since it may be the first half of the double-click that
+     renames; a click anywhere else opens the details at once. */
+  const clickTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(clickTimer.current), []);
+  const click = (e: React.MouseEvent) => {
+    if (editing) return;
+    clearTimeout(clickTimer.current);
+    if (!cleaning && (e.target as HTMLElement).closest(".sp-name")) clickTimer.current = setTimeout(onOpen, 220);
+    else onOpen();
+  };
+  const reason = cleaning ? reasonText(entry) : null;
   return (
     <motion.div
       layout="position"
       initial={{ opacity: 0, height: 0 }}
-      animate={{ opacity: terminating ? 0.45 : 1, height: "auto", x: terminating ? 8 : 0 }}
+      animate={{ opacity: terminating ? 0.45 : restarting ? 0.6 : 1, height: "auto", x: terminating ? 8 : 0 }}
       exit={{ opacity: 0, height: 0, x: 16, transition: { duration: 0.18, ease: easeInOut } }}
       transition={{ duration: 0.16, ease, layout: { duration: 0.28, ease: easeInOut } }}
       className="sp-row-wrap"
     >
-      <div ref={rowRef} onMouseMove={onHover} onContextMenu={onMenu} className="sp-row">
-        <RuntimeTile entry={entry} />
+      <div
+        ref={rowRef}
+        onMouseMove={onHover}
+        onContextMenu={onMenu}
+        onClick={click}
+        className="sp-row"
+        role={cleaning ? "checkbox" : undefined}
+        aria-checked={cleaning ? checked : undefined}
+      >
+        {cleaning ? (
+          <span className={`sp-check ${checked ? "is-on" : ""}`} aria-hidden>
+            <svg viewBox="0 0 12 12" width="10" height="10">
+              <path d="M2.5 6.2 5 8.6l4.6-5.2" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
+        ) : (
+          <RuntimeTile entry={entry} />
+        )}
 
         <div className="sp-row-main">
           <div className="sp-row-title">
@@ -271,7 +372,11 @@ function Row({
             ) : (
               <span
                 className="sp-name"
-                onDoubleClick={() => onEdit(true)}
+                onDoubleClick={() => {
+                  if (cleaning) return;
+                  clearTimeout(clickTimer.current);
+                  onEdit(true);
+                }}
                 title={`Double-click to rename · detected as ${entry.detectedProjectName}`}
               >
                 {entry.projectName}
@@ -279,7 +384,16 @@ function Row({
             )}
             {entry.pinned && !editing ? <I icon={StarIcon} size={11} stroke={2} className="sp-pin-star is-filled" /> : null}
           </div>
-          {entry.container ? (
+          {restarting ? (
+            <div className="sp-row-sub">
+              <span className="sp-pulse" />
+              <span className="sp-truncate">Restarting…</span>
+            </div>
+          ) : reason ? (
+            <div className={`sp-row-sub ${entry.cleanup ? "is-reason" : ""}`}>
+              <span className="sp-truncate">{reason}</span>
+            </div>
+          ) : entry.container ? (
             <div className="sp-row-sub" title={`Container ${entry.container.id}`}>
               <I icon={ContainerIcon} size={11} />
               <span className="sp-truncate">{entry.container.project ? `${entry.container.project} · ${entry.container.image}` : entry.container.image}</span>
@@ -298,15 +412,23 @@ function Row({
         </div>
 
         <div className="sp-row-side">
-          <motion.div initial={false} animate={{ opacity: selected ? 0 : 1 }} transition={{ duration: 0.15, ease }} className="sp-row-meta">
+          <motion.div initial={false} animate={{ opacity: selected && !cleaning ? 0 : 1 }} transition={{ duration: 0.15, ease }} className="sp-row-meta">
             <span className="sp-port">{entry.port}</span>
-            <span className="sp-uptime">{formatUptime(entry.uptimeSeconds)}</span>
+            <span className="sp-uptime">
+              {entry.memoryBytes !== null ? (
+                <span className={entry.attention ? "sp-warn" : ""} title={alert ?? "Memory used by this server and what it started"}>
+                  {formatBytes(entry.memoryBytes)}
+                </span>
+              ) : null}
+              {entry.memoryBytes !== null && entry.uptimeSeconds !== null ? " · " : null}
+              {formatUptime(entry.uptimeSeconds)}
+            </span>
           </motion.div>
           <motion.div
             initial={false}
-            animate={{ opacity: selected ? 1 : 0, x: selected ? 0 : 4 }}
+            animate={{ opacity: selected && !cleaning ? 1 : 0, x: selected && !cleaning ? 0 : 4 }}
             transition={{ duration: 0.15, ease }}
-            className={`sp-row-actions ${selected ? "" : "is-hidden"}`}
+            className={`sp-row-actions ${selected && !cleaning ? "" : "is-hidden"}`}
           >
             <Tool label={entry.pinned ? "Unpin" : "Pin to top"} onClick={() => backend.pin(entry.port, !entry.pinned)} icon={entry.pinned ? PinOffIcon : PinIcon} tone={entry.pinned ? "star" : undefined} />
             <Tool
@@ -324,7 +446,7 @@ function Row({
   );
 }
 
-type MenuAction = "pin" | "rename" | "url" | "port" | "share" | "unshare" | "public" | "open" | "kill";
+type MenuAction = "pin" | "rename" | "details" | "editor" | "url" | "port" | "share" | "unshare" | "public" | "open" | "restart" | "snooze" | "kill";
 
 function Menu({ entry, up, maxHeight, onPick }: { entry: PortEntry; up: boolean; maxHeight: number; onPick: (a: MenuAction) => void }) {
   const tunnel = entry.tunnel;
@@ -349,6 +471,8 @@ function Menu({ entry, up, maxHeight, onPick }: { entry: PortEntry; up: boolean;
       <Squircle radius={12} edge="var(--border)" className="sp-pop-body sp-menu-body" style={{ maxHeight }}>
         {item("pin", entry.pinned ? PinOffIcon : PinIcon, entry.pinned ? "Unpin" : "Pin to Top")}
         {item("rename", PencilEdit02Icon, "Rename…")}
+        {item("details", InformationCircleIcon, "Details", "→")}
+        {entry.cwd && !entry.container ? item("editor", VisualStudioCodeIcon, "Open in VS Code") : null}
         {sep("a")}
         {item("url", Link01Icon, "Copy URL")}
         {item("port", Copy01Icon, "Copy Port")}
@@ -357,6 +481,8 @@ function Menu({ entry, up, maxHeight, onPick }: { entry: PortEntry; up: boolean;
         {tunnel?.status === "live" ? item("public", Globe02Icon, "Copy Public URL") : null}
         {sep("c")}
         {item("open", ArrowUpRight01Icon, "Open in Browser", "↵")}
+        {entry.container || entry.canRestart ? item("restart", RepeatIcon, entry.container ? "Restart Container" : "Restart") : null}
+        {entry.attention ? item("snooze", NotificationSnooze01Icon, "Snooze Alert for 1 Hour") : null}
         {sep("d")}
         {item("kill", CancelCircleIcon, entry.container ? "Stop Container" : "Kill Server", "⌫", true)}
       </Squircle>
@@ -389,11 +515,21 @@ function Segmented<T extends string | number>({ value, options, onChange, format
   );
 }
 
+const CLEANUP_LABEL: Record<CleanupMode, string> = { off: "Off", ask: "Ask", auto: "Automatic" };
+
 function SettingsView({ settings, backend }: { settings: AppSettings; backend: Backend }) {
   const label = (t: string) => <div className="sp-set-label">{t}</div>;
+  const [installed, setInstalled] = useState<{ ok: boolean; text: string } | null>(null);
+  const install = () =>
+    backend.installCli().then(
+      (text) => setInstalled({ ok: true, text }),
+      (e) => setInstalled({ ok: false, text: String(e) })
+    );
   return (
     <div className="sp-settings-view">
       <Toggle label="Launch at Login" on={settings.launchAtLogin} onChange={(v) => backend.setLaunchAtLogin(v)} />
+      <Toggle label={`Open with ${SHORTCUT}`} on={settings.shortcut} onChange={(v) => backend.updateSettings({ shortcut: v })} />
+      <Toggle label="Notifications" on={settings.notifications} onChange={(v) => backend.updateSettings({ notifications: v })} />
       <Toggle label="Show diagnostics" on={settings.showDiagnostics} onChange={(v) => backend.updateSettings({ showDiagnostics: v })} />
       {label("Sort by")}
       <Segmented<SortOption> value={settings.sortBy} options={["port", "name", "uptime"] as const} onChange={(v) => backend.updateSettings({ sortBy: v })} />
@@ -404,8 +540,25 @@ function SettingsView({ settings, backend }: { settings: AppSettings; backend: B
         onChange={(v) => backend.updateSettings({ refreshIntervalSeconds: v })}
         format={(n) => `${n}s`}
       />
+      {label("Warn when a server uses more than")}
+      <Segmented<number> value={settings.memoryAlertGb} options={[1, 2, 4, 8, 0] as const} onChange={(v) => backend.updateSettings({ memoryAlertGb: v })} format={(n) => (n ? `${n} GB` : "Off")} />
+      <Toggle label="Warn when memory keeps growing" on={settings.leakAlerts} onChange={(v) => backend.updateSettings({ leakAlerts: v })} />
+      {label("Forgotten servers")}
+      <Segmented<CleanupMode> value={settings.cleanup} options={["off", "ask", "auto"] as const} onChange={(v) => backend.updateSettings({ cleanup: v })} format={(v) => CLEANUP_LABEL[v]} />
+      <div className="sp-set-hint">
+        {settings.cleanup === "auto"
+          ? "Stops servers that sit idle or whose folder is gone. Never databases, pinned, shared or growing servers."
+          : settings.cleanup === "ask"
+            ? "Sends a notification when a server sits idle or its folder is gone."
+            : "Clean up still suggests them. Nothing happens on its own."}
+      </div>
+      {label("Idle means no CPU use for")}
+      <Segmented<number> value={settings.idleHours} options={[1, 2, 4, 8] as const} onChange={(v) => backend.updateSettings({ idleHours: v })} format={(n) => `${n}h`} />
       {label("Shared links expire after")}
       <Segmented<LinkExpiry> value={settings.linkExpiry} options={["1h", "4h", "never"] as const} onChange={(v) => backend.updateSettings({ linkExpiry: v })} format={(v) => EXPIRY_LABEL[v]} />
+      {label("Integrations")}
+      <Toggle label="Link Claude Code, Codex, Conductor, Pane" on={settings.agentSessions} onChange={(v) => backend.updateSettings({ agentSessions: v })} />
+      <Toggle label="Show pull requests (GitHub CLI)" on={settings.pullRequests} onChange={(v) => backend.updateSettings({ pullRequests: v })} />
       {label("Sharing")}
       <Squircle radius={10} className="sp-share-card">
         <I icon={Globe02Icon} size={14} className="sp-accent" />
@@ -414,8 +567,206 @@ function SettingsView({ settings, backend }: { settings: AppSettings; backend: B
           <div>Share gives a temporary trycloudflare.com link, no account needed. Uses your installed cloudflared.</div>
         </div>
       </Squircle>
+      {label("Terminal")}
+      <Squircle radius={10} className="sp-share-card">
+        <I icon={ComputerTerminal01Icon} size={14} className="sp-accent" />
+        <div className="sp-share-text">
+          <div className="sp-share-title">roulette list</div>
+          <div className={installed && !installed.ok ? "sp-error-text" : ""}>
+            {installed ? installed.text : "Lists your servers in a terminal, or as JSON for scripts and coding agents."}
+          </div>
+        </div>
+        <button type="button" className="sp-code-copy" onClick={install}>
+          {installed?.ok ? "Installed" : "Install"}
+        </button>
+      </Squircle>
       <div className="sp-set-foot">
         {APP_NAME} {APP_VERSION}
+      </div>
+    </div>
+  );
+}
+
+function Fact({ label, value, title, onClick, action }: { label: string; value: React.ReactNode; title?: string; onClick?: () => void; action?: React.ReactNode }) {
+  return (
+    <div className="sp-fact">
+      <span className="sp-fact-label">{label}</span>
+      {onClick ? (
+        <button type="button" className="sp-fact-value is-link" title={title} onClick={onClick}>
+          <span className="sp-truncate">{value}</span>
+        </button>
+      ) : (
+        <span className="sp-fact-value sp-truncate" title={title}>
+          {value}
+        </span>
+      )}
+      {action}
+    </div>
+  );
+}
+
+function DetailView({
+  entry,
+  settings,
+  backend,
+  onBack,
+  onKill,
+  onCopy,
+  onRestart,
+  onEditor,
+}: {
+  entry: PortEntry | undefined;
+  settings: AppSettings;
+  backend: Backend;
+  onBack: () => void;
+  onKill: (e: PortEntry) => void;
+  onCopy: (text: string, label: string) => void;
+  onRestart: (port: number) => void;
+  onEditor: (entry: PortEntry) => void;
+}) {
+  if (!entry) {
+    return (
+      <div className="sp-detail">
+        <StateCard
+          icon={<Spark size={17} />}
+          title="This server stopped"
+          action={
+            <button type="button" onClick={onBack} className="sp-solid-btn">
+              Back to all servers
+            </button>
+          }
+        />
+      </div>
+    );
+  }
+  const alert = alertText(entry, settings);
+  const folder = entry.cwd;
+  const restartable = entry.container !== null || entry.canRestart;
+  return (
+    <div className="sp-detail">
+      <div className="sp-detail-head">
+        <Tool label="Back  esc" onClick={onBack} icon={ArrowLeft01Icon} />
+        <RuntimeTile entry={entry} />
+        <div className="sp-detail-title">
+          <span className="sp-name">{entry.projectName}</span>
+          <span className="sp-detail-port">:{entry.port}</span>
+        </div>
+        <div className="sp-detail-actions">
+          <Tool label={`Open localhost:${entry.port}  ↵`} onClick={() => backend.open(entry.port)} icon={ArrowUpRight01Icon} />
+          {restartable ? <Tool label={entry.container ? "Restart container" : "Restart"} onClick={() => onRestart(entry.port)} icon={RepeatIcon} /> : null}
+          <Tool label={entry.container ? "Stop container  ⌫" : "Stop  ⌫"} onClick={() => onKill(entry)} icon={CancelCircleIcon} tone="danger" />
+        </div>
+      </div>
+
+      {alert ? (
+        <div className="sp-alert" role="status">
+          <I icon={Alert02Icon} size={13} />
+          <span className="sp-alert-text">{alert}</span>
+          <button type="button" className="sp-alert-btn" onClick={() => backend.snooze(entry.port)}>
+            Snooze 1h
+          </button>
+        </div>
+      ) : null}
+
+      {entry.memoryBytes !== null ? (
+        <div className="sp-charts">
+          <Chart
+            label="Memory"
+            value={formatBytes(entry.memoryBytes)}
+            samples={entry.history}
+            pick="mem"
+            limit={settings.memoryAlertGb * GB}
+            warn={entry.attention !== null}
+          />
+          <Chart label="CPU" value={`${Math.round(entry.cpuPercent ?? 0)}%`} samples={entry.history} pick="cpu" />
+        </div>
+      ) : null}
+
+      <div className="sp-facts">
+        {entry.status === "restarting" ? <Fact label="Status" value="Restarting…" /> : null}
+        {folder ? (
+          <Fact
+            label="Folder"
+            value={folder}
+            title={`${folder}\nClick to copy`}
+            onClick={() => onCopy(folder, "folder")}
+            action={!entry.container && !entry.folderMissing ? <Tool label="Open in VS Code" onClick={() => onEditor(entry)} icon={VisualStudioCodeIcon} /> : null}
+          />
+        ) : null}
+        {entry.folderMissing ? <Fact label="" value={<span className="sp-warn">This folder no longer exists</span>} /> : null}
+        {entry.command ? <Fact label="Command" value={entry.command} title={`${entry.command}\nClick to copy`} onClick={() => onCopy(entry.command!, "command")} /> : null}
+        {entry.container ? <Fact label="Image" value={entry.container.image} title={`Container ${entry.container.id}`} /> : null}
+        {entry.branch ? <Fact label="Branch" value={entry.branch} /> : null}
+        {entry.pullRequest ? (
+          <Fact
+            label="Pull request"
+            value={`#${entry.pullRequest.number} ${entry.pullRequest.title}`}
+            title={`${entry.pullRequest.state} · ${entry.pullRequest.url}`}
+            onClick={() => backend.openLink(entry.pullRequest!.url)}
+          />
+        ) : null}
+        {entry.session ? (
+          <Fact
+            label={entry.session.kind}
+            value={entry.session.title ?? `Session ${entry.session.id.slice(0, 8)}`}
+            title={`${entry.session.kind} session ${entry.session.id}\nClick to copy the command that resumes it`}
+            onClick={() => onCopy(entry.session!.resume, "resume command")}
+          />
+        ) : null}
+        {entry.workspace ? (
+          <Fact
+            label={entry.workspace.app}
+            value={entry.workspace.name}
+            title={entry.workspace.link ? `Open this ${entry.workspace.app} terminal` : `${entry.workspace.app} workspace`}
+            onClick={entry.workspace.link ? () => backend.openLink(entry.workspace!.link!) : undefined}
+          />
+        ) : null}
+        {entry.uptimeSeconds !== null ? <Fact label="Running" value={formatUptime(entry.uptimeSeconds)} /> : null}
+        {!entry.container ? <Fact label="Process" value={`${entry.processName} · pid ${entry.pid}`} /> : null}
+      </div>
+
+      {entry.processes.length > 1 ? (
+        <>
+          <div className="sp-set-label sp-detail-label">Processes</div>
+          <div className="sp-procs">
+            {entry.processes.map((p) => (
+              <div key={p.pid} className="sp-proc">
+                <span className="sp-truncate">{p.name}</span>
+                <span className="sp-proc-pid">{p.pid}</span>
+                <span className="sp-proc-mem">{formatBytes(p.memory)}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function MemoryBar({ memory }: { memory: SystemMemory }) {
+  const total = memory.total || 1;
+  const servers = Math.min(memory.servers, memory.used);
+  const other = Math.max(0, memory.used - servers);
+  const free = Math.max(0, memory.total - memory.used);
+  return (
+    <div className="sp-mem" title={`RAM on this machine: ${formatBytes(memory.total)}`}>
+      <div className="sp-mem-bar">
+        <span className="is-servers" style={{ width: `${(servers / total) * 100}%` }} />
+        <span className="is-other" style={{ width: `${(other / total) * 100}%` }} />
+      </div>
+      <div className="sp-mem-line">
+        <span className="sp-mem-key">
+          <i className="is-servers" />
+          Servers {formatBytes(servers)}
+        </span>
+        <span className="sp-mem-key">
+          <i className="is-other" />
+          Other apps {formatBytes(other)}
+        </span>
+        <span className="sp-mem-key">
+          <i />
+          Free {formatBytes(free)}
+        </span>
       </div>
     </div>
   );
@@ -424,6 +775,8 @@ function SettingsView({ settings, backend }: { settings: AppSettings; backend: B
 const viewIn = (dir: 1 | -1) => ({ opacity: 0, x: 8 * dir });
 const viewOut = (dir: 1 | -1) => ({ opacity: 0, x: 8 * dir, transition: { duration: 0.1, ease: [0.55, 0, 1, 0.45] as const } });
 const viewShown = { opacity: 1, x: 0, transition: { duration: 0.2, ease, delay: 0.05 } };
+const viewNow = { opacity: 1, x: 0, transition: { duration: 0 } };
+const viewGone = { opacity: 0, transition: { duration: 0 } };
 
 function StateCard({ icon, title, text, action }: { icon: React.ReactNode; title: string; text?: string; action?: React.ReactNode }) {
   return (
@@ -518,7 +871,10 @@ export function Panel({
   const [query, setQuery] = useState("");
   const [sel, setSel] = useState<number | null>(null);
   const [menu, setMenu] = useState<{ port: number; x: number; y: number; up: boolean; maxHeight: number } | null>(null);
-  const [view, setView] = useState<"list" | "settings">("list");
+  const [view, setView] = useState<"list" | "settings" | "detail">("list");
+  const [detailPort, setDetailPort] = useState<number | null>(null);
+  const [cleaning, setCleaning] = useState<Set<number> | null>(null);
+  const [instant, setInstant] = useState(false);
   const [switching, setSwitching] = useState(false);
   const [editing, setEditing] = useState<number | null>(null);
   const [copiedPort, setCopiedPort] = useState<number | null>(null);
@@ -542,6 +898,35 @@ export function Panel({
   const kill = (entry: PortEntry) => {
     if (isDocker(entry) && !entry.container) say("Held by Docker itself");
     else backend.kill(entry.port, entry.pid);
+  };
+  const openEditor = (entry: PortEntry) => {
+    if (!entry.cwd) return;
+    say("Opening in VS Code");
+    backend.openInEditor(entry.cwd).catch((e) => say(String(e)));
+  };
+  const restart = (port: number) => {
+    say(`Restarting :${port}`);
+    backend.restart(port).catch((e) => say(String(e)));
+  };
+  const selectable = (e: PortEntry) => !isDocker(e) || e.container !== null;
+  const startCleaning = () => {
+    setMenu(null);
+    setCleaning(new Set(state.entries.filter((e) => e.cleanup && !e.attention && selectable(e)).map((e) => e.port)));
+  };
+  const toggleClean = (port: number) =>
+    setCleaning((cur) => {
+      if (!cur) return cur;
+      const next = new Set(cur);
+      if (next.has(port)) next.delete(port);
+      else next.add(port);
+      return next;
+    });
+  const stopCleaned = () => {
+    if (!cleaning?.size) return;
+    const ports = [...cleaning].filter((p) => state.entries.some((e) => e.port === p));
+    backend.stopMany(ports);
+    say(`Stopping ${ports.length} ${ports.length === 1 ? "server" : "servers"}`);
+    setCleaning(null);
   };
   const copy = (text: string, label = text) => {
     backend.copy(text);
@@ -604,18 +989,43 @@ export function Panel({
     else backend.rename(port, next);
   };
 
-  const stateRef = useRef({ ordered, sel, editing, view });
-  stateRef.current = { ordered, sel, editing, view };
+  const stateRef = useRef({ ordered, sel, editing, view, cleaning, detailPort, entries: state.entries });
+  stateRef.current = { ordered, sel, editing, view, cleaning, detailPort, entries: state.entries };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const { ordered: list, sel: cur, editing: ed, view: v } = stateRef.current;
+      const { ordered: list, sel: cur, editing: ed, view: v, cleaning: cl, detailPort: dp, entries } = stateRef.current;
       if (ed !== null) return;
       if (v === "settings") {
-        if (e.key === "Escape") showView("list");
+        if (e.key === "Escape") showView("list", true);
+        return;
+      }
+      if (v === "detail") {
+        const entry = entries.find((s) => s.port === dp);
+        if (e.key === "Escape" || e.key === "ArrowLeft") showView("list", true);
+        else if (e.key === "Enter" && entry) backend.open(entry.port);
+        else if ((e.key === "Backspace" || e.key === "Delete") && entry) {
+          kill(entry);
+          showView("list", true);
+        }
         return;
       }
       const idx = list.findIndex((s) => s.port === cur);
       const typing = document.activeElement === search.current;
+      if (cl && e.key === "Escape") {
+        setCleaning(null);
+        return;
+      }
+      if (cl && e.key === " " && cur !== null && !typing) {
+        e.preventDefault();
+        const entry = list.find((s) => s.port === cur);
+        if (entry && selectable(entry)) toggleClean(cur);
+        return;
+      }
+      if (e.key === "ArrowRight" && cur !== null && !cl && !typing) {
+        e.preventDefault();
+        openDetail(cur, true);
+        return;
+      }
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
         const next = e.key === "ArrowDown" ? Math.min(list.length - 1, idx + 1) : Math.max(0, idx < 0 ? 0 : idx - 1);
@@ -624,7 +1034,7 @@ export function Panel({
       } else if (e.key === "Enter" && cur !== null) {
         e.preventDefault();
         backend.open(cur);
-      } else if ((e.key === "Backspace" || e.key === "Delete") && cur !== null && !typing) {
+      } else if ((e.key === "Backspace" || e.key === "Delete") && cur !== null && !typing && !cl) {
         e.preventDefault();
         const entry = list.find((s) => s.port === cur);
         if (entry) kill(entry);
@@ -715,6 +1125,10 @@ export function Panel({
     if (a === "unshare") backend.stopTunnel(entry.port);
     if (a === "public") copyLink(entry);
     if (a === "open") backend.open(entry.port);
+    if (a === "details") openDetail(entry.port);
+    if (a === "editor") openEditor(entry);
+    if (a === "restart") restart(entry.port);
+    if (a === "snooze") backend.snooze(entry.port);
     if (a === "kill") kill(entry);
   };
 
@@ -737,14 +1151,24 @@ export function Panel({
   /* Settings opens inside the space the list already takes, so the panel (and the window around it)
      keeps its size; the settings scroll if they need more room. Only a very short list grows to fit. */
   const [settingsH, setSettingsH] = useState(SETTINGS_MIN);
-  function showView(next: "list" | "settings") {
-    if (next === "settings") setSettingsH(Math.max(SETTINGS_MIN, bodyInner.current?.offsetHeight ?? 0));
+  function showView(next: "list" | "settings" | "detail", viaKey = false) {
+    if (next !== "list" && view === "list") setSettingsH(Math.max(SETTINGS_MIN, bodyInner.current?.offsetHeight ?? 0));
     setMenu(null);
-    setSel(null);
+    setCleaning(null);
+    if (next !== "list" || !viaKey) setSel(null);
+    setInstant(viaKey);
     setSwitching(true);
     setView(next);
     clearTimeout(switchTimer.current);
     switchTimer.current = setTimeout(() => setSwitching(false), 320);
+  }
+  function openDetail(port: number, viaKey = false) {
+    setDetailPort(port);
+    showView("detail", viaKey);
+    if (viaKey) {
+      viaKeys.current = true;
+      setSel(port);
+    }
   }
 
   const row = (entry: PortEntry) => (
@@ -768,6 +1192,13 @@ export function Panel({
       onRename={(v) => rename(entry.port, v)}
       onCopyLink={() => copyLink(entry)}
       onKill={() => kill(entry)}
+      onOpen={() => {
+        if (!cleaning) openDetail(entry.port);
+        else if (selectable(entry)) toggleClean(entry.port);
+      }}
+      cleaning={cleaning !== null}
+      checked={cleaning?.has(entry.port) ?? false}
+      alert={alertText(entry, settings)}
     />
   );
 
@@ -786,8 +1217,11 @@ export function Panel({
   const error = apiError ?? (state.lastError && state.entries.length === 0 ? state.lastError : null);
   const selected = ordered.find((e) => e.port === sel) ?? ordered[0] ?? null;
   const shared = state.entries.filter((e) => e.tunnel?.status === "live").length;
-  const killable = state.entries.filter((e) => !isDocker(e)).length;
-  const dockerRows = state.entries.length - killable;
+  const canClean = state.entries.some(selectable);
+  const suggested = state.entries.filter((e) => e.cleanup && !e.attention && selectable(e)).length;
+  const allPicked = cleaning !== null && state.entries.filter(selectable).every((e) => cleaning.has(e.port));
+  const detailEntry = state.entries.find((e) => e.port === detailPort);
+  const viewT = instant ? { duration: 0 } : { duration: 0.2, ease };
 
   return (
     <div
@@ -803,7 +1237,7 @@ export function Panel({
             <span className="sp-brand-name">{APP_NAME}</span>
             <AnimatePresence mode="wait" initial={false}>
               <motion.span
-                key={note ?? (view === "settings" ? "settings" : "count")}
+                key={note ?? (view !== "list" ? view : cleaning ? "cleaning" : "count")}
                 initial={{ opacity: 0, y: 3 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -3, transition: exitT }}
@@ -811,27 +1245,42 @@ export function Panel({
                 className={`sp-brand-count ${note ? "is-note" : ""}`}
                 role={note ? "status" : undefined}
               >
-                {note ?? (view === "settings" ? "Settings" : `${state.entries.length} running`)}
+                {note ??
+                  (view === "settings" ? "Settings" : view === "detail" ? "Details" : cleaning ? `${cleaning.size} selected` : `${state.entries.length} running`)}
               </motion.span>
             </AnimatePresence>
           </span>
         </div>
         <div className="sp-header-actions">
-          <AnimatePresence initial={false}>
-            {killable > 0 && view === "list" ? (
+          <AnimatePresence initial={false} mode="popLayout">
+            {cleaning && view === "list" ? (
               <motion.button
-                key="killall"
+                key="cancel"
                 type="button"
-                onClick={() => backend.killAll()}
-                className="sp-text-btn is-danger"
+                onClick={() => setCleaning(null)}
+                className="sp-text-btn"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0, transition: exitT }}
                 transition={{ duration: 0.15, ease }}
-                title={dockerRows ? `Kill all ${killable} running servers. Docker containers keep running.` : `Kill all ${killable} running servers`}
+                title="Leave clean up  esc"
               >
-                <I icon={CancelCircleIcon} size={13} />
-                Kill all
+                Cancel
+              </motion.button>
+            ) : canClean && view === "list" ? (
+              <motion.button
+                key="clean"
+                type="button"
+                onClick={startCleaning}
+                className="sp-text-btn"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0, transition: exitT }}
+                transition={{ duration: 0.15, ease }}
+                title={suggested ? `${suggested} ${suggested === 1 ? "server looks" : "servers look"} forgotten` : "Pick servers to stop"}
+              >
+                Clean up
+                {suggested ? <span className="sp-badge">{suggested}</span> : null}
               </motion.button>
             ) : null}
           </AnimatePresence>
@@ -862,16 +1311,32 @@ export function Panel({
         className="sp-body"
         initial={false}
         animate={{ height: bodyH }}
-        transition={switching ? { duration: 0.25, ease: easeInOut } : { duration: 0 }}
+        transition={switching && !instant ? { duration: 0.25, ease: easeInOut } : { duration: 0 }}
       >
         <div ref={bodyInner} className="sp-body-inner">
           <AnimatePresence mode="popLayout" initial={false}>
             {view === "settings" ? (
-              <motion.div key="settings" className="sp-settings-frame" style={{ height: settingsH }} initial={viewIn(1)} animate={viewShown} exit={viewOut(1)} transition={{ duration: 0.2, ease }}>
+              <motion.div key="settings" className="sp-settings-frame" style={{ height: settingsH }} initial={viewIn(1)} animate={instant ? viewNow : viewShown} exit={instant ? viewGone : viewOut(1)} transition={viewT}>
                 <SettingsView settings={settings} backend={backend} />
               </motion.div>
+            ) : view === "detail" ? (
+              <motion.div key="detail" className="sp-settings-frame" style={{ height: settingsH }} initial={viewIn(1)} animate={instant ? viewNow : viewShown} exit={instant ? viewGone : viewOut(1)} transition={viewT}>
+                <DetailView
+                  entry={detailEntry}
+                  settings={settings}
+                  backend={backend}
+                  onBack={() => showView("list")}
+                  onKill={(e) => {
+                    kill(e);
+                    showView("list");
+                  }}
+                  onCopy={(text, label) => copy(text, label)}
+                  onRestart={restart}
+                  onEditor={openEditor}
+                />
+              </motion.div>
             ) : (
-              <motion.div key="list" initial={viewIn(-1)} animate={viewShown} exit={viewOut(-1)} transition={{ duration: 0.2, ease }}>
+              <motion.div key="list" initial={viewIn(-1)} animate={instant ? viewNow : viewShown} exit={instant ? viewGone : viewOut(-1)} transition={viewT}>
       {update ? (
         <motion.div className="sp-update" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.15, ease }}>
           <I icon={RefreshIcon} size={13} />
@@ -945,6 +1410,26 @@ export function Panel({
           </>
         )}
       </div>
+
+      <div className={`sp-expand ${cleaning ? "is-open" : ""}`} aria-hidden={!cleaning}>
+        <div className="sp-expand-inner">
+          <div className="sp-cleanbar">
+            <button
+              type="button"
+              className="sp-text-btn"
+              tabIndex={cleaning ? 0 : -1}
+              onClick={() => setCleaning(allPicked ? new Set() : new Set(state.entries.filter(selectable).map((e) => e.port)))}
+            >
+              {allPicked ? "Select none" : "Select all"}
+            </button>
+            <button type="button" className="sp-danger-btn" tabIndex={cleaning ? 0 : -1} disabled={!cleaning?.size} onClick={stopCleaned}>
+              {cleaning?.size ? `Stop ${cleaning.size} ${cleaning.size === 1 ? "server" : "servers"}` : "Pick servers to stop"}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {state.memory && state.entries.length > 0 && !cleaning ? <MemoryBar memory={state.memory} /> : null}
 
       <div className={`sp-expand ${settings.showDiagnostics ? "is-open" : ""}`} aria-hidden={!settings.showDiagnostics}>
         <div className="sp-expand-inner">
